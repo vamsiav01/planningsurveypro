@@ -8,7 +8,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Survey Pro Map",
+  title: "Planning Survey Pro",
   description: "Geographic Survey App with real-time collaboration",
 };
 

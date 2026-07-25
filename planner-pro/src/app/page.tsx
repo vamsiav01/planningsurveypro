@@ -78,7 +78,7 @@ export default function Home() {
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
             <Hexagon size={40} style={{ color: '#e2e8f0', strokeWidth: 1.5 }} />
           </div>
-          <h1 style={{ color: '#ffffff', fontSize: '1.5rem', fontWeight: 600, margin: '0 0 0.25rem 0', textAlign: 'center' }}>Planner Pro</h1>
+          <h1 style={{ color: '#ffffff', fontSize: '1.5rem', fontWeight: 600, margin: '0 0 0.25rem 0', textAlign: 'center' }}>Planning Survey Pro</h1>
           <p style={{ color: '#94a3b8', fontSize: '0.875rem', margin: 0, textAlign: 'center' }}>Welcome back to the field</p>
         </div>
 
