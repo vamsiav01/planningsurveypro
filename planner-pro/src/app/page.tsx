@@ -20,7 +20,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      router.push("/dashboard");
+      router.push("/projects");
     }
   }, [user, authLoading, router]);
 
