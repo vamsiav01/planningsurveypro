@@ -74,7 +74,7 @@ export default function Home() {
       }}>
         
         {/* Header section */}
-        <div style={{ display: 'flex', flexDirection: 'col', alignItems: 'center', marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '2rem' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
             <Hexagon size={40} style={{ color: '#e2e8f0', strokeWidth: 1.5 }} />
           </div>
