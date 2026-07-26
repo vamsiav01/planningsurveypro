@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -14,8 +14,39 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+
 const auth = getAuth(app);
-const db = getFirestore(app);
+
+// Use initializeFirestore to force long-polling (bypasses WebSocket blocking)
+let db: any;
+if (!getApps().length || !app) {
+  // Should not happen, but safe fallback
+  db = getFirestore(app);
+} else {
+  // If app is already initialized, getFirestore just returns the existing instance.
+  // But we want to initialize it with custom settings if it's the first time.
+  try {
+    db = initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+    });
+    
+    // Enable offline persistence so projects survive page reloads instantly
+    if (typeof window !== 'undefined') {
+      enableIndexedDbPersistence(db).catch((err) => {
+        if (err.code == 'failed-precondition') {
+          console.warn("Multiple tabs open, persistence can only be enabled in one tab at a a time.");
+        } else if (err.code == 'unimplemented') {
+          console.warn("The current browser does not support all of the features required to enable persistence");
+        }
+      });
+    }
+  } catch (e) {
+    // If it was already initialized
+    db = getFirestore(app);
+  }
+}
+
 const storage = getStorage(app);
 
 export { app, auth, db, storage };
+
