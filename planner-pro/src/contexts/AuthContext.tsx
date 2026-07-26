@@ -35,26 +35,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Safety timeout: forcefully clear loading if Firebase fails to initialize or network is dead
-    const safetyTimeout = setTimeout(() => {
-      setLoading(false);
+    let isMounted = true;
+    
+    // Safety net in case Firebase never connects (e.g., offline or bad config)
+    const safetyTimer = setTimeout(() => {
+      if (isMounted && loading) {
+        setLoading(false);
+      }
     }, 4000);
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      clearTimeout(safetyTimeout);
+      clearTimeout(safetyTimer);
+      if (!isMounted) return;
+      
       setUser(firebaseUser);
       setLoading(false);
       
       if (firebaseUser) {
         try {
-          // Fetch or create profile in Firestore
           const userDocRef = doc(db, "users", firebaseUser.uid);
           const userDoc = await getDoc(userDocRef);
           
           if (userDoc.exists()) {
             setProfile(userDoc.data() as UserProfile);
           } else {
-            // Create initial profile
             const initialProfile: UserProfile = {
               name: firebaseUser.displayName || "",
               photoURL: firebaseUser.photoURL || "",
@@ -64,8 +68,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             setProfile(initialProfile);
           }
         } catch (error) {
-          console.error("Error fetching or creating user profile:", error);
-          // Fallback to a basic profile if Firestore fails (e.g. permission denied)
+          console.error("Error fetching profile:", error);
           setProfile({
             name: firebaseUser.displayName || "",
             photoURL: firebaseUser.photoURL || "",
@@ -78,10 +81,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     return () => {
-      clearTimeout(safetyTimeout);
+      isMounted = false;
+      clearTimeout(safetyTimer);
       unsubscribe();
     };
-  }, []);
+  }, [loading]);
 
   const signOut = async () => {
     await firebaseSignOut(auth);

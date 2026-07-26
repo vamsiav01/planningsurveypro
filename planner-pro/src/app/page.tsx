@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { Loader2, Hexagon, Mail, Lock, Eye, EyeOff, User, Download } from "lucide-react";
+import { Loader2, Hexagon, Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 export default function Home() {
   const { user, loading: authLoading } = useAuth();
@@ -48,63 +48,34 @@ export default function Home() {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
     } catch (err: any) {
-      setError(err.message || "Google authentication failed. Please try again.");
+      setError(err.message || "Google authentication failed.");
       setLoading(false);
     }
   };
 
   if (authLoading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b1121' }}>
-        <Loader2 className="w-8 h-8 animate-spin text-primary" style={{ color: '#6366f1' }} />
+      <div className="min-h-screen bg-[#0b1121] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b1121', padding: '1rem', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      <div style={{ 
-        width: '100%', 
-        maxWidth: '420px', 
-        backgroundColor: '#111827', 
-        borderRadius: '16px', 
-        padding: '2.5rem',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-        border: '1px solid rgba(255, 255, 255, 0.05)'
-      }}>
-        
-        {/* Header section */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '2rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
-            <Hexagon size={40} style={{ color: '#e2e8f0', strokeWidth: 1.5 }} />
+    <div className="min-h-screen bg-[#0b1121] flex items-center justify-center p-4 text-slate-200">
+      <div className="w-full max-w-md bg-[#111827] rounded-2xl p-10 shadow-2xl border border-white/5">
+        <div className="flex flex-col items-center mb-8">
+          <div className="flex justify-center mb-4">
+            <Hexagon size={48} className="text-slate-200 stroke-[1.5]" />
           </div>
-          <h1 style={{ color: '#ffffff', fontSize: '1.5rem', fontWeight: 600, margin: '0 0 0.25rem 0', textAlign: 'center' }}>Planning Survey Pro</h1>
-          <p style={{ color: '#94a3b8', fontSize: '0.875rem', margin: 0, textAlign: 'center' }}>Welcome back to the field</p>
+          <h1 className="text-2xl font-semibold text-white text-center mb-1">Planning Survey Pro</h1>
+          <p className="text-slate-400 text-sm text-center">Welcome back to the field</p>
         </div>
 
-        {/* Google Button */}
         <button
           onClick={handleGoogleSignIn}
           disabled={loading}
-          style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '0.75rem',
-            padding: '0.75rem',
-            backgroundColor: '#1e293b',
-            color: '#f8fafc',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-            borderRadius: '8px',
-            fontSize: '0.875rem',
-            fontWeight: 500,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            transition: 'background-color 0.2s',
-            marginBottom: '1.5rem'
-          }}
-          onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#273549'}
-          onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#1e293b'}
+          className="w-full flex items-center justify-center gap-3 p-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-medium transition-colors border border-white/5 mb-6"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -115,146 +86,68 @@ export default function Home() {
           Continue with Google
         </button>
 
-        {/* Divider */}
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <div style={{ flex: 1, height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)' }}></div>
-          <span style={{ margin: '0 1rem', color: '#64748b', fontSize: '0.75rem', fontWeight: 500, letterSpacing: '0.05em' }}>
-            OR SIGN IN WITH EMAIL
-          </span>
-          <div style={{ flex: 1, height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)' }}></div>
+        <div className="flex items-center mb-6">
+          <div className="flex-1 h-px bg-white/10"></div>
+          <span className="mx-4 text-xs font-medium tracking-wider text-slate-500">OR SIGN IN WITH EMAIL</span>
+          <div className="flex-1 h-px bg-white/10"></div>
         </div>
 
         {error && (
-          <div style={{ padding: '0.75rem', marginBottom: '1rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#fca5a5', fontSize: '0.875rem', borderRadius: '6px' }}>
+          <div className="p-3 mb-4 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
-          {/* Email Input */}
-          <div style={{ position: 'relative', marginBottom: '1rem' }}>
-            <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }}>
-              <Mail size={18} />
-            </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="relative">
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
             <input 
               type="email" 
               placeholder="Email address"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.75rem 1rem 0.75rem 2.5rem',
-                backgroundColor: '#0f172a',
-                border: '1px solid rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px',
-                color: '#f8fafc',
-                fontSize: '0.875rem',
-                outline: 'none',
-                boxSizing: 'border-box'
-              }}
-              onFocus={(e) => e.target.style.borderColor = '#6366f1'}
-              onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.05)'}
+              className="w-full bg-[#0f172a] border border-white/5 rounded-xl py-3 pl-10 pr-4 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
             />
           </div>
 
-          {/* Password Input */}
-          <div style={{ position: 'relative', marginBottom: '1.5rem' }}>
-            <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }}>
-              <Lock size={18} />
-            </div>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
             <input 
               type={showPassword ? "text" : "password"} 
               placeholder="Password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.75rem 2.5rem 0.75rem 2.5rem',
-                backgroundColor: '#0f172a',
-                border: '1px solid rgba(255, 255, 255, 0.05)',
-                borderRadius: '8px',
-                color: '#f8fafc',
-                fontSize: '0.875rem',
-                outline: 'none',
-                boxSizing: 'border-box'
-              }}
-              onFocus={(e) => e.target.style.borderColor = '#6366f1'}
-              onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.05)'}
+              className="w-full bg-[#0f172a] border border-white/5 rounded-xl py-3 pl-10 pr-10 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
             >
-              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
 
-          {/* Submit Button */}
           <button 
             type="submit" 
             disabled={loading}
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              backgroundColor: '#6366f1',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '0.875rem',
-              fontWeight: 500,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              transition: 'background-color 0.2s',
-              marginBottom: '1.5rem'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#4f46e5'}
-            onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#6366f1'}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors flex items-center justify-center mt-2"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isLogin ? "Sign In" : "Register")}
           </button>
         </form>
 
-        {/* Footer Links */}
-        <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
-          <span style={{ color: '#64748b', fontSize: '0.875rem' }}>
-            {isLogin ? "Don't have an account? " : "Already have an account? "}
-          </span>
+        <div className="mt-6 text-center text-sm text-slate-500">
+          {isLogin ? "Don't have an account? " : "Already have an account? "}
           <button 
             onClick={() => setIsLogin(!isLogin)}
-            style={{ background: 'none', border: 'none', color: '#6366f1', fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer', padding: 0 }}
-            onMouseOver={(e) => e.currentTarget.style.textDecoration = 'underline'}
-            onMouseOut={(e) => e.currentTarget.style.textDecoration = 'none'}
+            className="text-indigo-400 hover:text-indigo-300 font-medium ml-1"
           >
             {isLogin ? "Register" : "Sign In"}
           </button>
         </div>
-
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <button 
-            onClick={() => alert("Guest access not configured.")}
-            style={{ 
-              background: 'none', 
-              border: 'none', 
-              color: '#64748b', 
-              fontSize: '0.875rem', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem', 
-              cursor: 'pointer',
-              transition: 'color 0.2s'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.color = '#94a3b8'}
-            onMouseOut={(e) => e.currentTarget.style.color = '#64748b'}
-          >
-            <User size={16} /> Continue as Guest
-          </button>
-        </div>
-
       </div>
     </div>
   );

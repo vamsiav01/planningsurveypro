@@ -3,14 +3,11 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./Providers";
 
-const inter = Inter({
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Planning Survey Pro",
-  description: "Geographic Survey App with real-time collaboration",
-  manifest: "/manifest.json",
+  description: "Geographic Survey App",
 };
 
 export default function RootLayout({

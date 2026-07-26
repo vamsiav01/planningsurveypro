@@ -1,5 +1,4 @@
 import type { Config } from "tailwindcss";
-// Cache bust 1
 
 const config: Config = {
   content: [
@@ -9,10 +8,10 @@ const config: Config = {
   ],
   theme: {
     extend: {
-      colors: {
-        background: "#0f172a",
-        surface: "#1e293b",
-        primary: "#6366f1",
+      backgroundImage: {
+        "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
+        "gradient-conic":
+          "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
       },
     },
   },

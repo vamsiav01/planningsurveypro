@@ -1,3 +1,0 @@
-[build]
-  base = "planner-pro"
-  command = "npm run build"
