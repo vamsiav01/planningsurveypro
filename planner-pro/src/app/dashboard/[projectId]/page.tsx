@@ -8,7 +8,7 @@ import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc,
 import { db } from "@/lib/firebase";
 import { 
   Loader2, Hexagon, LayoutDashboard, Trash2, User as UserIcon, LogOut, 
-  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash
+  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft
 } from "lucide-react";
 
 // Safe dynamic import for Leaflet map
@@ -54,6 +54,12 @@ export default function Dashboard({ params }: DashboardProps) {
   const [occupants, setOccupants] = useState("");
   const [yearBuilt, setYearBuilt] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const zoningCounts = surveys.reduce((acc, survey) => {
+    const z = survey.answers?.zoning || 'unknown';
+    acc[z] = (acc[z] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/");
@@ -260,44 +266,14 @@ export default function Dashboard({ params }: DashboardProps) {
   return (
     <div className="flex h-screen bg-[#0b1121] text-slate-200 overflow-hidden font-sans">
       
-      {/* 1. Global Left Navigation Sidebar */}
-      <aside className="w-[260px] bg-[#0f172a] border-r border-white/5 flex flex-col justify-between shrink-0 z-20 shadow-2xl">
-        <div>
-          <div className="h-20 flex items-center px-6 gap-3 border-b border-white/5">
-            <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Hexagon className="w-6 h-6 text-white" />
-            </div>
-            <h1 className="text-xl font-bold text-white tracking-wide">Planner Pro</h1>
-          </div>
-          
-          <nav className="p-4 space-y-2">
-            <button onClick={() => router.push('/projects')} className="w-full flex items-center gap-3 px-4 py-3 bg-indigo-500/10 text-indigo-400 rounded-xl font-medium transition-colors">
-              <LayoutDashboard className="w-5 h-5" /> Dashboard
-            </button>
-            <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-slate-200 hover:bg-white/5 rounded-xl font-medium transition-colors">
-              <Trash2 className="w-5 h-5" /> Trash Bin
-            </button>
-            <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-slate-200 hover:bg-white/5 rounded-xl font-medium transition-colors">
-              <UserIcon className="w-5 h-5" /> Profile
-            </button>
-          </nav>
-        </div>
-        
-        <div className="p-4 border-t border-white/5">
-          <div className="flex items-center gap-3 px-4 py-3 mb-2">
-            <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold">
-              {user.email?.[0].toUpperCase()}
-            </div>
-            <span className="text-sm font-medium text-slate-300 truncate">{user.email}</span>
-          </div>
-          <button onClick={signOut} className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl font-medium transition-colors">
-            <LogOut className="w-5 h-5" /> Log Out
-          </button>
-        </div>
-      </aside>
-
-      {/* 2. Center Map Area & Floating Glassmorphism Modal */}
+      {/* 1. Center Map Area & Floating Glassmorphism Modal */}
       <main className="flex-1 relative h-full">
+        <button 
+          onClick={() => router.push('/projects')}
+          className="absolute top-6 left-16 z-[1000] bg-slate-900/80 backdrop-blur-md border border-white/10 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-sm font-medium transition-all"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Projects
+        </button>
         <MapWrapper 
           surveys={surveys} 
           onMapClick={handleMapClick}
@@ -507,10 +483,19 @@ export default function Dashboard({ params }: DashboardProps) {
               <div className="flex items-center gap-3 text-white font-medium mb-4">
                 <BarChart2 className="w-5 h-5 text-indigo-400" /> Survey Analytics
               </div>
-              <div className="flex items-end justify-between border-t border-white/5 pt-4">
+              <div className="flex items-end justify-between border-t border-white/5 pt-4 pb-2">
                 <span className="text-sm text-slate-400">Total Surveyed:</span>
                 <span className="text-2xl font-bold text-white leading-none">{surveys.length}</span>
               </div>
+              
+              {Object.entries(zoningCounts).map(([zone, count]) => (
+                <div key={zone} className="flex items-center justify-between mt-3">
+                  <span className="text-xs text-slate-400 capitalize flex items-center gap-2">
+                    <Building className="w-3.5 h-3.5 text-indigo-400/70" /> {zone}
+                  </span>
+                  <span className="text-sm font-semibold text-white">{String(count)}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
