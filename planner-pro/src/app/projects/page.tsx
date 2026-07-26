@@ -71,7 +71,6 @@ export default function ProjectsPage() {
         updateState();
       }, (error) => {
         console.error("Error fetching owned projects:", error);
-        setLoading(false);
       });
 
       if (user.email) {
@@ -87,12 +86,14 @@ export default function ProjectsPage() {
 
     if (user) {
       setupListeners();
+      // Ensure the loading screen clears even if Firestore connection is slow
+      const timeout = setTimeout(() => setLoading(false), 800);
+      return () => {
+        clearTimeout(timeout);
+        unsubscribeOwned();
+        unsubscribeShared();
+      };
     }
-
-    return () => {
-      unsubscribeOwned();
-      unsubscribeShared();
-    };
   }, [user]);
 
   const handleCreateProject = async (e: React.FormEvent) => {
