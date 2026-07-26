@@ -125,7 +125,7 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
   const fetchTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const fetchBuildingsInBounds = async () => {
-    if (map.getZoom() < 14) {
+    if (map.getZoom() < 16) {
       setBuildings([]);
       return;
     }
@@ -137,7 +137,6 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
 
     if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
     
-    // Set loading after a small delay so it doesn't flicker on fast loads, or just set it immediately
     fetchTimeout.current = setTimeout(async () => {
       setIsFetching(true);
       try {
@@ -169,13 +168,18 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
             geom: el.geometry.map((pt: any) => [pt.lat, pt.lon])
           }));
           setBuildings(parsed);
+          if (parsed.length === 0) {
+            console.log("No buildings found in this area on OpenStreetMap.");
+          }
+        } else if (res.status === 429) {
+          console.warn("Server is busy. Please wait a moment.");
         }
       } catch (err) {
         console.error("Overpass Auto Fetch Error", err);
       } finally {
         setIsFetching(false);
       }
-    }, 800);
+    }, 1500);
   };
 
   useMapEvents({
