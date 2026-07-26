@@ -145,7 +145,7 @@ export default function TrashPage() {
           <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/10 text-red-400 font-medium transition-colors">
             <Trash2 className="w-5 h-5" /> Trash Bin
           </button>
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 transition-colors">
+          <button onClick={() => router.push('/profile')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 transition-colors">
             <UserIcon className="w-5 h-5" /> Profile
           </button>
         </nav>
