@@ -139,7 +139,7 @@ export default function DashboardProjectPage() {
     
     // Clear dynamic form data, populate defaults
     const initialData: Record<string, string> = {};
-    (formSchema || []).forEach(field => {
+    (formSchema || []).filter(f => f).forEach(field => {
       if (field.type === 'multipleChoice' && (field.options || []).length > 0) {
         initialData[field.id] = (field.options || [])[0];
       } else {
@@ -204,7 +204,7 @@ export default function DashboardProjectPage() {
     
     // Set dynamic form state to edit mode (supporting legacy flat fields)
     const editData: Record<string, string> = {};
-    (formSchema || []).forEach(field => {
+    (formSchema || []).filter(f => f).forEach(field => {
       editData[field.id] = (survey.answers && survey.answers[field.id]) 
                            || survey[field.id] 
                            || (field.type === 'multipleChoice' && (field.options || []).length > 0 ? (field.options || [])[0] : "");
@@ -266,7 +266,7 @@ export default function DashboardProjectPage() {
   }
 
   // Dynamic Analytics Calculations: find the first multiple choice/combobox field to act as the primary category
-  const categoryField = (formSchema || []).find(f => (f.type === 'combobox' || f.type === 'multipleChoice') && f.visible);
+  const categoryField = (formSchema || []).filter(f => f).find(f => (f.type === 'combobox' || f.type === 'multipleChoice') && f.visible);
   
   const dynamicCounts = surveys.reduce((acc, survey) => {
     if (!categoryField) return acc;
@@ -415,7 +415,7 @@ export default function DashboardProjectPage() {
              </div>
              
              <div className="p-6 overflow-y-auto flex-1 space-y-4 custom-scrollbar">
-                {(formSchema || []).map((field, idx) => (
+                {(formSchema || []).filter(f => f).map((field, idx) => (
                   <div key={field.id} className={`bg-[#1e293b] border ${field.visible ? 'border-white/10' : 'border-white/5 opacity-60'} rounded-xl p-4 flex gap-4 transition-opacity`}>
                     <div className="text-slate-500 cursor-grab active:cursor-grabbing mt-2">
                       <GripVertical className="w-5 h-5" />
@@ -573,7 +573,7 @@ export default function DashboardProjectPage() {
                 </div>
 
                 <form onSubmit={handleSaveNewSurvey} className="space-y-3 mt-4">
-                  {(formSchema || []).filter(f => f.visible).map(field => (
+                  {(formSchema || []).filter(f => f && f.visible).map(field => (
                     <div key={field.id} className="w-full">
                       <label className="block text-xs font-medium text-slate-400 mb-1">{field.label} {field.required && <span className="text-red-400">*</span>}</label>
                       
@@ -654,7 +654,7 @@ export default function DashboardProjectPage() {
               </div>
 
               <form onSubmit={handleUpdateSurvey} className="space-y-3">
-                {(formSchema || []).filter(f => f.visible).map(field => (
+                {(formSchema || []).filter(f => f && f.visible).map(field => (
                     <div key={field.id} className="w-full">
                       <label className="block text-xs font-medium text-slate-400 mb-1">{field.label} {field.required && <span className="text-red-400">*</span>}</label>
                       
