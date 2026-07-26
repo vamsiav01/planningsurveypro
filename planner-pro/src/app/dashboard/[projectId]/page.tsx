@@ -8,7 +8,7 @@ import { doc, getDoc, collection, query, onSnapshot, addDoc, serverTimestamp, de
 import dynamic from "next/dynamic";
 import DraggablePanel from "@/components/DraggablePanel";
 import { SafeErrorBoundary } from "@/components/SafeErrorBoundary";
-import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical, CheckCircle2, Share2, Users } from "lucide-react";
+import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical, CheckCircle2, Share2, Users, Copy, Link, Check } from "lucide-react";
 
 const MapWrapper = dynamic(() => import("@/components/MapWrapper"), { 
   ssr: false,
@@ -37,18 +37,17 @@ interface FormField {
   id: string;
   label: string;
   type: QuestionType;
-  options: string[]; // for multiple choice / combobox
+  options?: string[]; // for multiple choice / combobox
   required: boolean;
   visible: boolean;
+  showInAnalytics?: boolean;
 }
 
 const DEFAULT_SCHEMA: FormField[] = [
   { id: 'houseNo', label: 'House No.', type: 'shortText', options: [], required: false, visible: true },
-  { id: 'floors', label: 'Floors', type: 'shortText', options: [], required: true, visible: true },
+  { id: 'floors', label: 'number', type: 'number', options: [], required: true, visible: true },
   { id: 'buildingName', label: 'Building Name', type: 'shortText', options: [], required: false, visible: true },
-  { id: 'landUse', label: 'Land Use / Category', type: 'combobox', options: ['Residential', 'Commercial', 'Industrial', 'Mixed Use', 'Open Space'], required: true, visible: true },
-  { id: 'condition', label: 'Condition', type: 'multipleChoice', options: ['Good', 'Fair', 'Poor', 'Ruins'], required: false, visible: true },
-  { id: 'occupancy', label: 'Occupancy', type: 'multipleChoice', options: ['Occupied', 'Vacant', 'Abandoned'], required: false, visible: true },
+  { id: 'landUse', label: 'Land Use / Category', type: 'combobox', options: ['Residential', 'Commercial', 'Industrial', 'Mixed Use', 'Open Space'], required: true, visible: true, showInAnalytics: true },
 ];
 
 export default function DashboardProjectPage() {
@@ -100,6 +99,13 @@ export default function DashboardProjectPage() {
           const pData = projectDoc.data();
           setProject({ id: projectDoc.id, ...pData });
           setFormSchema(Array.isArray(pData.formSchema) ? pData.formSchema : DEFAULT_SCHEMA);
+          
+          // Magic Link Joining Logic: Automatically add user to collaborators if they have the link
+          if (pData.userId !== user.uid && user.email && !(pData.collaborators || []).includes(user.email)) {
+             const newCollaborators = [...(pData.collaborators || []), user.email];
+             await updateDoc(doc(db, "projects", projectId as string), { collaborators: newCollaborators });
+             setProject({ id: projectDoc.id, ...pData, collaborators: newCollaborators });
+          }
         } else {
           router.push("/projects");
           return;
@@ -134,31 +140,18 @@ export default function DashboardProjectPage() {
     }
   };
 
-  const handleAddCollaborator = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inviteEmail.trim() || !project) return;
-    
-    setSharing(true);
-    try {
-      const currentCollaborators = project.collaborators || [];
-      if (currentCollaborators.includes(inviteEmail.trim().toLowerCase())) {
-        alert("This user is already a collaborator!");
-        setSharing(false);
-        return;
-      }
-      
-      const newCollaborators = [...currentCollaborators, inviteEmail.trim().toLowerCase()];
-      await updateDoc(doc(db, "projects", projectId as string), {
-        collaborators: newCollaborators
-      });
-      
-      setProject({ ...project, collaborators: newCollaborators });
-      setInviteEmail("");
-    } catch (err) {
-      console.error("Error adding collaborator", err);
-      alert("Failed to add collaborator.");
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  const copyToClipboard = (text: string, type: 'link' | 'code') => {
+    navigator.clipboard.writeText(text);
+    if (type === 'link') {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    } else {
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
     }
-    setSharing(false);
   };
 
   const handleRemoveCollaborator = async (email: string) => {
@@ -422,7 +415,7 @@ export default function DashboardProjectPage() {
                 </div>
                 
                 {(() => {
-                  const analyticsFields = (formSchema || []).filter(f => f && (f.type === 'combobox' || f.type === 'multipleChoice') && f.visible);
+                  const analyticsFields = (formSchema || []).filter(f => f && (f.type === 'combobox' || f.type === 'multipleChoice') && f.visible && f.showInAnalytics !== false);
                   
                   if (analyticsFields.length === 0) {
                     return <div className="text-xs text-slate-500 italic relative z-10">Add a Multiple Choice or Combo Box question to see detailed analytics.</div>;
@@ -523,19 +516,36 @@ export default function DashboardProjectPage() {
                       </div>
                       
                       {(field.type === 'multipleChoice' || field.type === 'combobox') && (
-                        <div>
-                          <label className="block text-xs font-medium text-slate-400 mb-1">Options (comma separated)</label>
-                          <input 
-                            type="text" 
-                            value={(Array.isArray(field.options) ? field.options : []).join(', ')} 
-                            onChange={(e) => {
-                              const newSchema = [...formSchema];
-                              newSchema[idx].options = e.target.value.split(',').map(s => s.trim()).filter(s => s);
-                              setFormSchema(newSchema);
-                            }}
-                            placeholder="e.g. Residential, Commercial"
-                            className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                          />
+                        <div className="flex gap-4">
+                          <div className="flex-1">
+                            <label className="block text-xs font-medium text-slate-400 mb-1">Options (comma separated)</label>
+                            <input 
+                              type="text" 
+                              value={(Array.isArray(field.options) ? field.options : []).join(', ')} 
+                              onChange={(e) => {
+                                const newSchema = [...formSchema];
+                                newSchema[idx].options = e.target.value.split(',').map(s => s.trim()).filter(s => s);
+                                setFormSchema(newSchema);
+                              }}
+                              placeholder="e.g. Residential, Commercial"
+                              className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                            />
+                          </div>
+                          <div className="flex items-end mb-2">
+                            <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-400">
+                              <input 
+                                type="checkbox" 
+                                checked={field.showInAnalytics !== false}
+                                onChange={(e) => {
+                                  const newSchema = [...formSchema];
+                                  newSchema[idx].showInAnalytics = e.target.checked;
+                                  setFormSchema(newSchema);
+                                }}
+                                className="w-4 h-4 rounded border-white/20 bg-[#0b1121] text-indigo-500 focus:ring-indigo-500/50"
+                              />
+                              Show in Analytics
+                            </label>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -602,26 +612,46 @@ export default function DashboardProjectPage() {
               
               <div className="p-6">
                 <p className="text-sm text-slate-400 mb-6">
-                  Invite collaborators to your project by email. They will see this project on their dashboard when they log in.
+                  Share this project code or direct link with your team. Anyone with the code can join and collaborate instantly!
                 </p>
 
-                <form onSubmit={handleAddCollaborator} className="flex gap-2 mb-8">
-                  <input
-                    type="email"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="Enter email address..."
-                    className="flex-1 bg-[#0b1121] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors"
-                    required
-                  />
-                  <button
-                    type="submit"
-                    disabled={sharing}
-                    className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shrink-0"
-                  >
-                    {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Invite"}
-                  </button>
-                </form>
+                <div className="space-y-4 mb-8">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Project Code</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={projectId}
+                        readOnly
+                        className="flex-1 bg-[#0b1121] border border-white/10 rounded-xl px-4 py-2.5 text-sm font-mono text-white focus:outline-none"
+                      />
+                      <button
+                        onClick={() => copyToClipboard(projectId as string, 'code')}
+                        className="bg-white/10 hover:bg-white/20 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shrink-0 flex items-center gap-2"
+                      >
+                        {copiedCode ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Direct Invite Link</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={`${typeof window !== 'undefined' ? window.location.origin : ''}/dashboard/${projectId}`}
+                        readOnly
+                        className="flex-1 bg-[#0b1121] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-400 truncate focus:outline-none"
+                      />
+                      <button
+                        onClick={() => copyToClipboard(`${window.location.origin}/dashboard/${projectId}`, 'link')}
+                        className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shrink-0 flex items-center gap-2"
+                      >
+                        {copiedLink ? <Check className="w-4 h-4" /> : <Link className="w-4 h-4" />} Copy
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
                 <div className="space-y-4">
                   <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">

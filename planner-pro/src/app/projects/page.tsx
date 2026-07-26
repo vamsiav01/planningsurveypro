@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
-import { Loader2, Plus, Folder, Map, LogOut, LayoutDashboard, Trash2, User as UserIcon, Hexagon } from "lucide-react";
+import { Loader2, Plus, Folder, Map, LogOut, LayoutDashboard, Trash2, User as UserIcon, Hexagon, Link } from "lucide-react";
 
 interface Project {
   id: string;
@@ -23,6 +23,8 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [isJoining, setIsJoining] = useState(false);
+  const [joinCode, setJoinCode] = useState("");
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -82,6 +84,14 @@ export default function ProjectsPage() {
       console.error("Error creating project:", error);
       setIsCreating(false);
     }
+  };
+
+  const handleJoinProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!joinCode.trim() || !user) return;
+    setIsJoining(true);
+    // Redirect to the project dashboard. The Magic Link logic there will automatically add the user as a collaborator.
+    router.push(`/dashboard/${joinCode.trim()}`);
   };
 
   const handleLogout = async () => {
@@ -168,6 +178,35 @@ export default function ProjectsPage() {
                   className="mt-auto bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors flex justify-center items-center shadow-lg shadow-indigo-600/20"
                 >
                   {isCreating ? <Loader2 className="w-5 h-5 animate-spin" /> : "Create & Open Map"}
+                </button>
+              </form>
+            </div>
+
+            {/* Join Project Card */}
+            <div className="bg-[#111827]/50 border border-purple-500/30 rounded-2xl p-6 hover:bg-[#111827] transition-all flex flex-col min-h-[220px] shadow-lg relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all"></div>
+              
+              <form onSubmit={handleJoinProject} className="flex flex-col h-full relative z-10">
+                <div className="w-12 h-12 bg-purple-600/20 text-purple-400 rounded-xl flex items-center justify-center mb-4">
+                  <Link className="w-6 h-6" />
+                </div>
+                <h3 className="font-semibold text-lg text-white mb-4">Join Project</h3>
+                
+                <input
+                  type="text"
+                  placeholder="Enter project code..."
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value)}
+                  className="bg-[#0b1121] border border-slate-700/50 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-purple-500 mb-4 transition-colors"
+                  required
+                />
+                
+                <button 
+                  type="submit"
+                  disabled={isJoining}
+                  className="mt-auto bg-purple-600 hover:bg-purple-500 text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors flex justify-center items-center shadow-lg shadow-purple-600/20"
+                >
+                  {isJoining ? <Loader2 className="w-5 h-5 animate-spin" /> : "Join Team"}
                 </button>
               </form>
             </div>
