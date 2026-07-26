@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { Loader2, Plus, Folder, Map, LogOut, LayoutDashboard, Trash2, User as UserIcon, Hexagon, Link } from "lucide-react";
 
 interface Project {
@@ -41,47 +41,58 @@ export default function ProjectsPage() {
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    const fetchProjects = async () => {
-      if (!user) return;
-      try {
-        const qOwned = query(collection(db, "projects"), where("userId", "==", user.uid));
-        const ownedPromise = getDocs(qOwned);
-        
-        let sharedPromise = Promise.resolve({ docs: [] } as any);
-        if (user.email) {
-          const qShared = query(collection(db, "projects"), where("collaborators", "array-contains", user.email));
-          sharedPromise = getDocs(qShared);
-        }
-        
-        const [snapOwned, snapShared] = await Promise.all([ownedPromise, sharedPromise]);
-        
-        const fetchedMap = new Map<string, Project>();
-        snapOwned.forEach((doc: any) => fetchedMap.set(doc.id, { id: doc.id, ...doc.data() } as Project));
-        snapShared.forEach((doc: any) => fetchedMap.set(doc.id, { id: doc.id, ...doc.data() } as Project));
-        
-        const getMillis = (field: any) => {
-          if (!field) return 0;
-          if (typeof field.toMillis === 'function') return field.toMillis();
-          if (typeof field.seconds === 'number') return field.seconds * 1000;
-          return Date.now();
-        };
+    let unsubscribeOwned = () => {};
+    let unsubscribeShared = () => {};
 
-        const fetchedProjects = Array.from(fetchedMap.values());
-        setProjects(fetchedProjects.sort((a, b) => {
+    const setupListeners = () => {
+      if (!user) return;
+      
+      const qOwned = query(collection(db, "projects"), where("userId", "==", user.uid));
+      
+      let ownedProjects: Project[] = [];
+      let sharedProjects: Project[] = [];
+      
+      const updateState = () => {
+        const fetchedMap = new Map<string, Project>();
+        ownedProjects.forEach(p => fetchedMap.set(p.id, p));
+        sharedProjects.forEach(p => fetchedMap.set(p.id, p));
+        
+        const fetched = Array.from(fetchedMap.values());
+        setProjects(fetched.sort((a, b) => {
           const timeA = a.updatedAt ? getMillis(a.updatedAt) : getMillis(a.createdAt);
           const timeB = b.updatedAt ? getMillis(b.updatedAt) : getMillis(b.createdAt);
           return timeB - timeA;
         }));
-      } catch (error) {
-        console.error("Error fetching projects:", error);
-      } finally {
         setLoading(false);
+      };
+
+      unsubscribeOwned = onSnapshot(qOwned, (snapshot) => {
+        ownedProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+        updateState();
+      }, (error) => {
+        console.error("Error fetching owned projects:", error);
+        setLoading(false);
+      });
+
+      if (user.email) {
+        const qShared = query(collection(db, "projects"), where("collaborators", "array-contains", user.email));
+        unsubscribeShared = onSnapshot(qShared, (snapshot) => {
+          sharedProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+          updateState();
+        }, (error) => {
+          console.error("Error fetching shared projects:", error);
+        });
       }
     };
-    
+
     if (user) {
-      fetchProjects();
+      setupListeners();
     }
+
+    return () => {
+      unsubscribeOwned();
+      unsubscribeShared();
+    };
   }, [user]);
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -99,17 +110,6 @@ export default function ProjectsPage() {
         updatedAt: now,
       });
       
-      // Update local state to immediately show it on the home screen
-      const newProject: Project = {
-        id: docRef.id,
-        name: newProjectName.trim(),
-        userId: user.uid,
-        collaborators: [],
-        createdAt: { toMillis: () => Date.now() },
-        updatedAt: { toMillis: () => Date.now() },
-      };
-      
-      setProjects(prev => [newProject, ...prev]);
       setNewProjectName("");
       setIsCreating(false);
     } catch (error) {
