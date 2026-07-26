@@ -348,10 +348,10 @@ export default function ProjectsPage() {
 
             {/* Existing Projects */}
             {projects.map((project) => (
-              <button
+              <div
                 key={project.id}
                 onClick={() => router.push(`/dashboard/${project.id}`)}
-                className="bg-[#111827] border border-slate-800 rounded-2xl p-6 hover:border-indigo-500/50 hover:shadow-[0_0_30px_rgba(99,102,241,0.1)] transition-all flex flex-col items-start text-left group min-h-[220px] relative"
+                className="bg-[#111827] border border-slate-800 rounded-2xl p-6 hover:border-indigo-500/50 hover:shadow-[0_0_30px_rgba(99,102,241,0.1)] transition-all flex flex-col items-start text-left group min-h-[220px] relative cursor-pointer"
               >
                 {project.userId !== user?.uid && (
                   <div className="absolute top-4 right-[100px] bg-purple-500/10 text-purple-400 text-[10px] font-bold uppercase tracking-wider px-2 py-1.5 rounded-md border border-purple-500/20">
@@ -386,7 +386,7 @@ export default function ProjectsPage() {
                     ? `Updated ${new Date(getMillis(project.updatedAt || project.createdAt)).toLocaleDateString()} at ${new Date(getMillis(project.updatedAt || project.createdAt)).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` 
                     : 'Just now'}
                 </p>
-              </button>
+              </div>
             ))}
           </div>
         </div>
