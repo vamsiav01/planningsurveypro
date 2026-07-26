@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { MapContainer, TileLayer, Marker, useMapEvents, LayersControl, useMap, Polygon } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMapEvents, LayersControl, useMap, Polygon, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import "leaflet-draw";
 import 'leaflet.heat';
@@ -141,7 +141,15 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
     fetchTimeout.current = setTimeout(async () => {
       setIsFetching(true);
       try {
-        const query = `[out:json][timeout:25];(way["building"](${s},${w},${n},${e});relation["building"](${s},${w},${n},${e});way["building:part"](${s},${w},${n},${e});relation["building:part"](${s},${w},${n},${e});way["amenity"](${s},${w},${n},${e});relation["amenity"](${s},${w},${n},${e});way["man_made"](${s},${w},${n},${e});relation["man_made"](${s},${w},${n},${e});way["historic"](${s},${w},${n},${e}););out body geom;`;
+        const query = `[out:json][timeout:25];(
+          way["building"](${s},${w},${n},${e});
+          relation["building"](${s},${w},${n},${e});
+          way["building:part"](${s},${w},${n},${e});
+          relation["building:part"](${s},${w},${n},${e});
+          way["amenity"~"college|university|hospital|school|public_building"](${s},${w},${n},${e});
+          relation["amenity"~"college|university|hospital|school|public_building"](${s},${w},${n},${e});
+          way["historic"](${s},${w},${n},${e});
+        );out body geom;`;
         const res = await fetch("https://overpass-api.de/api/interpreter", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -181,23 +189,39 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
           </div>
         </div>
       )}
-      {buildings.map((b) => (
-        <Polygon 
-          key={b.id} 
-          positions={b.geom} 
-          pathOptions={{ color: '#6366f1', weight: 1.5, fillColor: '#6366f1', fillOpacity: 0.15 }}
-          eventHandlers={{
-            click: (e) => {
-              // Prevent the map's default click handler
-              L.DomEvent.stopPropagation(e.originalEvent);
-              if (onAutoBuildingClick) {
-                const center = e.target.getBounds().getCenter();
-                onAutoBuildingClick(b.geom, b.tags, center.lat, center.lng);
+      {buildings.map((b) => {
+        const name = b.tags?.name || b.tags?.['name:en'];
+        const amenity = b.tags?.amenity;
+        const levels = b.tags?.['building:levels'];
+        
+        let info = name || '';
+        if (!name && amenity) info = amenity.charAt(0).toUpperCase() + amenity.slice(1);
+        if (!info && b.tags?.building && b.tags.building !== 'yes') info = b.tags.building.charAt(0).toUpperCase() + b.tags.building.slice(1);
+        if (levels) info += info ? ` (G+${parseInt(levels) - 1})` : `G+${parseInt(levels) - 1} Floors`;
+
+        return (
+          <Polygon 
+            key={b.id} 
+            positions={b.geom} 
+            pathOptions={{ color: '#6366f1', weight: 1.5, fillColor: '#6366f1', fillOpacity: 0.15 }}
+            eventHandlers={{
+              click: (e) => {
+                L.DomEvent.stopPropagation(e.originalEvent);
+                if (onAutoBuildingClick) {
+                  const center = e.target.getBounds().getCenter();
+                  onAutoBuildingClick(b.geom, b.tags, center.lat, center.lng);
+                }
               }
-            }
-          }}
-        />
-      ))}
+            }}
+          >
+            {info && (
+              <Tooltip direction="top" offset={[0, -10]} opacity={0.9} className="custom-tooltip">
+                <span className="font-semibold text-slate-800">{info}</span>
+              </Tooltip>
+            )}
+          </Polygon>
+        );
+      })}
     </>
   );
 }
