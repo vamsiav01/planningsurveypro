@@ -6,8 +6,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, collection, query, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc } from "firebase/firestore";
 import dynamic from "next/dynamic";
-import Draggable from "react-draggable";
-import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, CheckCircle2, Trash2, Edit2, MapPin } from "lucide-react";
+import DraggablePanel from "@/components/DraggablePanel";
+import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical } from "lucide-react";
 
 const MapWrapper = dynamic(() => import("@/components/MapWrapper"), { 
   ssr: false,
@@ -19,6 +19,37 @@ const MapWrapper = dynamic(() => import("@/components/MapWrapper"), {
   )
 });
 
+// Helper for dynamic icons based on category string
+const getCategoryIcon = (category: string) => {
+  const cat = category.toLowerCase();
+  if (cat.includes('residential') || cat.includes('house')) return <Building2 className="w-4 h-4 text-emerald-400" />;
+  if (cat.includes('commercial') || cat.includes('retail') || cat.includes('shop')) return <Store className="w-4 h-4 text-blue-400" />;
+  if (cat.includes('industrial') || cat.includes('factory')) return <Factory className="w-4 h-4 text-orange-400" />;
+  if (cat.includes('open') || cat.includes('park') || cat.includes('green')) return <TreePine className="w-4 h-4 text-green-400" />;
+  if (cat.includes('mixed')) return <Layers className="w-4 h-4 text-purple-400" />;
+  return <Map className="w-4 h-4 text-slate-400" />; // fallback
+};
+
+type QuestionType = 'shortText' | 'multipleChoice' | 'combobox';
+
+interface FormField {
+  id: string;
+  label: string;
+  type: QuestionType;
+  options: string[]; // for multiple choice / combobox
+  required: boolean;
+  visible: boolean;
+}
+
+const DEFAULT_SCHEMA: FormField[] = [
+  { id: 'houseNo', label: 'House No.', type: 'shortText', options: [], required: false, visible: true },
+  { id: 'floors', label: 'Floors', type: 'shortText', options: [], required: true, visible: true },
+  { id: 'buildingName', label: 'Building Name', type: 'shortText', options: [], required: false, visible: true },
+  { id: 'landUse', label: 'Land Use / Category', type: 'combobox', options: ['Residential', 'Commercial', 'Industrial', 'Mixed Use', 'Open Space'], required: true, visible: true },
+  { id: 'condition', label: 'Condition', type: 'multipleChoice', options: ['Good', 'Fair', 'Poor', 'Ruins'], required: false, visible: true },
+  { id: 'occupancy', label: 'Occupancy', type: 'multipleChoice', options: ['Occupied', 'Vacant', 'Abandoned'], required: false, visible: true },
+];
+
 export default function DashboardProjectPage() {
   const { projectId } = useParams();
   const { user } = useAuth();
@@ -28,40 +59,28 @@ export default function DashboardProjectPage() {
   const [surveys, setSurveys] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Form Schema State
+  const [formSchema, setFormSchema] = useState<FormField[]>([]);
+  
   // Active Map State
   const [activeBuildingGeom, setActiveBuildingGeom] = useState<any[]>([]);
   const [activeClickLoc, setActiveClickLoc] = useState<{lat: number, lng: number} | null>(null);
 
   // Modal States
   const [isNewSurveyModalOpen, setIsNewSurveyModalOpen] = useState(false);
-  const [viewedSurvey, setViewedSurvey] = useState<any>(null); // For viewing/editing
+  const [viewedSurvey, setViewedSurvey] = useState<any>(null);
+  const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   
   // Data State
   const [osmData, setOsmData] = useState<any>(null);
   const [fetchingOsm, setFetchingOsm] = useState(false);
   
-  // Form State
-  const [houseNo, setHouseNo] = useState("");
-  const [buildingName, setBuildingName] = useState("");
-  const [floors, setFloors] = useState("");
-  const [landUse, setLandUse] = useState("residential");
-  const [condition, setCondition] = useState("good");
-  const [occupancy, setOccupancy] = useState("occupied");
+  // Dynamic Form Data State
+  const [formData, setFormData] = useState<Record<string, string>>({});
 
   // Map Tools State
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [showMarkers, setShowMarkers] = useState(true);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-  // Form Settings State
-  const [formSettings, setFormSettings] = useState({
-    houseNo: true,
-    buildingName: true,
-    floors: true,
-    landUse: true,
-    condition: true,
-    occupancy: true
-  });
 
   useEffect(() => {
     if (!user) {
@@ -72,7 +91,9 @@ export default function DashboardProjectPage() {
       try {
         const projectDoc = await getDoc(doc(db, "projects", projectId as string));
         if (projectDoc.exists()) {
-          setProject({ id: projectDoc.id, ...projectDoc.data() });
+          const pData = projectDoc.data();
+          setProject({ id: projectDoc.id, ...pData });
+          setFormSchema(pData.formSchema || DEFAULT_SCHEMA);
         } else {
           router.push("/projects");
           return;
@@ -96,6 +117,18 @@ export default function DashboardProjectPage() {
     fetchProjectAndSurveys();
   }, [projectId, user, router]);
 
+  // Handle saving the dynamic schema back to the project
+  const saveFormSchema = async (newSchema: FormField[]) => {
+    setFormSchema(newSchema);
+    try {
+      await updateDoc(doc(db, "projects", projectId as string), {
+        formSchema: newSchema
+      });
+    } catch (err) {
+      console.error("Error saving schema", err);
+    }
+  };
+
   const handleMapClick = async (lat: number, lng: number) => {
     setActiveClickLoc({ lat, lng });
     setActiveBuildingGeom([]);
@@ -104,17 +137,23 @@ export default function DashboardProjectPage() {
     setOsmData(null);
     setFetchingOsm(true);
     
-    // Clear form for new entry
-    setHouseNo("");
-    setBuildingName("");
-    setFloors("");
-    setLandUse("residential");
-    setCondition("good");
-    setOccupancy("occupied");
+    // Clear dynamic form data, populate defaults
+    const initialData: Record<string, string> = {};
+    formSchema.forEach(field => {
+      if (field.type === 'multipleChoice' && field.options.length > 0) {
+        initialData[field.id] = field.options[0];
+      } else {
+        initialData[field.id] = "";
+      }
+    });
     
     try {
-      const overpassQuery = `[out:json];(way[building](around:20, ${lat}, ${lng});relation[building](around:20, ${lat}, ${lng}););out body geom;`;
-      const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`);
+      const overpassQuery = `[out:json];(way[building](around:30, ${lat}, ${lng});relation[building](around:30, ${lat}, ${lng}););out body geom;`;
+      const response = await fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(overpassQuery)}`
+      });
       const data = await response.json();
       
       if (data.elements && data.elements.length > 0) {
@@ -139,20 +178,13 @@ export default function DashboardProjectPage() {
           tags: tags
         });
 
-        if (tags['addr:housenumber']) setHouseNo(tags['addr:housenumber']);
-        if (tags['name']) setBuildingName(tags['name']);
-        
-        if (tags['building:levels']) {
+        // Smart populate logic for legacy standard fields if they exist in schema
+        if (tags['addr:housenumber'] && formSchema.find(f => f.id === 'houseNo')) initialData['houseNo'] = tags['addr:housenumber'];
+        if (tags['name'] && formSchema.find(f => f.id === 'buildingName')) initialData['buildingName'] = tags['name'];
+        if (tags['building:levels'] && formSchema.find(f => f.id === 'floors')) {
           const levels = parseInt(tags['building:levels']);
-          if (!isNaN(levels)) {
-            setFloors(levels > 1 ? `G+${levels - 1}` : 'G');
-          } else {
-            setFloors(tags['building:levels']);
-          }
+          initialData['floors'] = !isNaN(levels) ? (levels > 1 ? `G+${levels - 1}` : 'G') : tags['building:levels'];
         }
-        
-        if (tags['building'] === 'commercial' || tags['building'] === 'retail') setLandUse('commercial');
-        if (tags['building'] === 'industrial') setLandUse('industrial');
       } else {
         setOsmData({ id: "Not Found", area: "N/A", tags: {} });
       }
@@ -160,6 +192,7 @@ export default function DashboardProjectPage() {
       console.error("OSM Fetch Error", err);
       setOsmData({ id: "Error", area: "N/A", tags: {} });
     } finally {
+      setFormData(initialData);
       setFetchingOsm(false);
     }
   };
@@ -169,14 +202,14 @@ export default function DashboardProjectPage() {
     setActiveClickLoc(null);
     setActiveBuildingGeom([]);
     
-    // Set form state to edit mode
-    setHouseNo(survey.houseNo || "");
-    setBuildingName(survey.buildingName || "");
-    setFloors(survey.floors || "");
-    setLandUse(survey.landUse || "residential");
-    setCondition(survey.condition || "good");
-    setOccupancy(survey.occupancy || "occupied");
-    
+    // Set dynamic form state to edit mode (supporting legacy flat fields)
+    const editData: Record<string, string> = {};
+    formSchema.forEach(field => {
+      editData[field.id] = (survey.answers && survey.answers[field.id]) 
+                           || survey[field.id] 
+                           || (field.type === 'multipleChoice' && field.options.length > 0 ? field.options[0] : "");
+    });
+    setFormData(editData);
     setViewedSurvey({ ...survey, index });
   };
 
@@ -186,12 +219,7 @@ export default function DashboardProjectPage() {
     try {
       await addDoc(collection(db, `projects/${projectId}/surveys`), {
         location: activeClickLoc,
-        houseNo: formSettings.houseNo ? houseNo : null,
-        buildingName: formSettings.buildingName ? buildingName : null,
-        floors: formSettings.floors ? (floors || 'G') : null,
-        landUse: formSettings.landUse ? landUse : null,
-        condition: formSettings.condition ? condition : null,
-        occupancy: formSettings.occupancy ? occupancy : null,
+        answers: formData,
         osmData,
         userId: user.uid,
         createdAt: serverTimestamp()
@@ -209,12 +237,7 @@ export default function DashboardProjectPage() {
     if (!viewedSurvey || !user) return;
     try {
       await updateDoc(doc(db, `projects/${projectId}/surveys`, viewedSurvey.id), {
-        houseNo: formSettings.houseNo ? houseNo : null,
-        buildingName: formSettings.buildingName ? buildingName : null,
-        floors: formSettings.floors ? floors : null,
-        landUse: formSettings.landUse ? landUse : null,
-        condition: formSettings.condition ? condition : null,
-        occupancy: formSettings.occupancy ? occupancy : null,
+        answers: formData
       });
       setViewedSurvey(null);
     } catch (error) {
@@ -241,6 +264,18 @@ export default function DashboardProjectPage() {
       </div>
     );
   }
+
+  // Dynamic Analytics Calculations: find the first multiple choice/combobox field to act as the primary category
+  const categoryField = formSchema.find(f => (f.type === 'combobox' || f.type === 'multipleChoice') && f.visible);
+  
+  const dynamicCounts = surveys.reduce((acc, survey) => {
+    if (!categoryField) return acc;
+    // Support legacy data
+    const ans = (survey.answers && survey.answers[categoryField.id]) || survey[categoryField.id] || 'Uncategorized';
+    if (!ans) return acc;
+    acc[ans] = (acc[ans] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
 
   return (
     <div className="relative w-screen h-screen bg-[#0b1121] overflow-hidden font-sans">
@@ -275,9 +310,9 @@ export default function DashboardProjectPage() {
       </div>
 
       {/* DRAGGABLE RIGHT SIDEBAR */}
-      <Draggable handle=".handle">
-        <aside className="absolute top-6 right-6 w-80 bg-[#111827]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-6 flex flex-col z-20 shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden pointer-events-auto max-h-[90vh]">
-          <div className="handle cursor-grab active:cursor-grabbing w-full h-4 absolute top-0 left-0 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+      <DraggablePanel initialPosition={{ x: window.innerWidth - 340, y: 24 }} className="z-20 w-80">
+        <aside className="bg-[#111827]/95 backdrop-blur-xl border border-white/10 rounded-3xl p-6 flex flex-col shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden max-h-[90vh]">
+          <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-4 absolute top-0 left-0 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
             <div className="w-12 h-1 bg-white/20 rounded-full"></div>
           </div>
           
@@ -303,7 +338,7 @@ export default function DashboardProjectPage() {
           </div>
 
           <div className="mb-6">
-            <h3 className="text-xs font-bold tracking-wider text-slate-500 mb-3 uppercase">Functional Map Tools</h3>
+            <h3 className="text-xs font-bold tracking-wider text-slate-500 mb-3 uppercase">Map Tools</h3>
             <div className="space-y-1">
               {[
                 { id: 'markers', label: 'Toggle Survey Pointers', icon: MapPin, state: showMarkers, setter: setShowMarkers },
@@ -324,60 +359,170 @@ export default function DashboardProjectPage() {
               ))}
             </div>
             
-            <button onClick={() => setIsSettingsOpen(true)} className="w-full flex items-center justify-center gap-2 text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/10 rounded-xl py-2 mt-4 text-sm font-medium transition-colors">
-              <Settings2 className="w-4 h-4" /> Edit Survey Form Fields
+            <button onClick={() => setIsBuilderOpen(true)} className="w-full flex items-center justify-center gap-2 text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/10 rounded-xl py-2 mt-4 text-sm font-medium transition-colors">
+              <Settings2 className="w-4 h-4" /> Form Builder
             </button>
           </div>
 
           <div className="mt-auto">
+            <h3 className="text-xs font-bold tracking-wider text-slate-500 mb-3 uppercase">Project Analytics</h3>
             <div className="bg-[#0b1121]/50 border border-slate-800 rounded-2xl p-5 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl"></div>
               <div className="flex items-center gap-2 text-indigo-400 font-medium mb-4 relative z-10">
                 <FileEdit className="w-5 h-5" /> Survey Analytics
               </div>
-              <div className="flex justify-between items-end relative z-10">
+              <div className="flex justify-between items-end relative z-10 mb-4 border-b border-white/10 pb-4">
                 <span className="text-slate-400 text-sm">Total Surveyed:</span>
                 <span className="text-2xl font-bold text-white">{surveys.length}</span>
               </div>
+              
+              {categoryField ? (
+                <div className="space-y-3 relative z-10 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">By {categoryField.label}</div>
+                  {Object.entries(dynamicCounts).sort((a, b) => b[1] - a[1]).map(([category, count]) => (
+                    <div key={category} className="flex justify-between items-center text-sm">
+                      <span className="flex items-center gap-2 text-slate-400 truncate pr-2 capitalize">
+                        {getCategoryIcon(category)} {category}
+                      </span>
+                      <span className="font-bold text-white">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-500 italic relative z-10">Add a Multiple Choice or Combo Box question to see detailed analytics.</div>
+              )}
             </div>
           </div>
         </aside>
-      </Draggable>
+      </DraggablePanel>
 
-      {/* SETTINGS MODAL */}
-      {isSettingsOpen && (
-        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl p-6">
-             <h2 className="text-xl font-bold text-white mb-4">Form Settings</h2>
-             <p className="text-sm text-slate-400 mb-6">Toggle the fields that appear when clicking the map.</p>
-             
-             <div className="space-y-3 mb-6">
-                {Object.keys(formSettings).map(field => (
-                  <label key={field} className="flex items-center gap-3 text-slate-300 text-sm cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={formSettings[field as keyof typeof formSettings]} 
-                      onChange={() => setFormSettings(prev => ({ ...prev, [field]: !prev[field as keyof typeof prev] }))}
-                      className="w-4 h-4 rounded border-slate-700 text-indigo-500 focus:ring-indigo-500 bg-[#0b1121]"
-                    />
-                    {field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1')}
-                  </label>
-                ))}
+      {/* FORM BUILDER MODAL */}
+      {isBuilderOpen && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl bg-[#0f172a] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden pointer-events-auto flex flex-col max-h-[90vh]">
+             <div className="p-6 border-b border-white/10 flex justify-between items-center bg-[#111827]">
+                <div>
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Settings2 className="w-5 h-5 text-indigo-400" /> Form Builder
+                  </h2>
+                  <p className="text-sm text-slate-400 mt-1">Design the data schema for this project. Drag fields to reorder (coming soon).</p>
+                </div>
+                <button onClick={() => setIsBuilderOpen(false)} className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-white/10">✕</button>
              </div>
              
-             <button onClick={() => setIsSettingsOpen(false)} className="w-full bg-slate-800 hover:bg-slate-700 text-white rounded-lg py-2 transition-colors">Close</button>
+             <div className="p-6 overflow-y-auto flex-1 space-y-4 custom-scrollbar">
+                {formSchema.map((field, idx) => (
+                  <div key={field.id} className={`bg-[#1e293b] border ${field.visible ? 'border-white/10' : 'border-white/5 opacity-60'} rounded-xl p-4 flex gap-4 transition-opacity`}>
+                    <div className="text-slate-500 cursor-grab active:cursor-grabbing mt-2">
+                      <GripVertical className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Question Label</label>
+                          <input 
+                            type="text" 
+                            value={field.label} 
+                            onChange={(e) => {
+                              const newSchema = [...formSchema];
+                              newSchema[idx].label = e.target.value;
+                              setFormSchema(newSchema);
+                            }}
+                            className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Answer Type</label>
+                          <select 
+                            value={field.type}
+                            onChange={(e) => {
+                              const newSchema = [...formSchema];
+                              newSchema[idx].type = e.target.value as QuestionType;
+                              if (e.target.value !== 'shortText' && !newSchema[idx].options) {
+                                newSchema[idx].options = ['Option 1'];
+                              }
+                              setFormSchema(newSchema);
+                            }}
+                            className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                          >
+                            <option value="shortText">Short Answer</option>
+                            <option value="multipleChoice">Multiple Choice</option>
+                            <option value="combobox">Combo Box (Dropdown + Manual)</option>
+                          </select>
+                        </div>
+                      </div>
+                      
+                      {(field.type === 'multipleChoice' || field.type === 'combobox') && (
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Options (comma separated)</label>
+                          <input 
+                            type="text" 
+                            value={field.options.join(', ')} 
+                            onChange={(e) => {
+                              const newSchema = [...formSchema];
+                              newSchema[idx].options = e.target.value.split(',').map(s => s.trim()).filter(s => s);
+                              setFormSchema(newSchema);
+                            }}
+                            placeholder="e.g. Residential, Commercial"
+                            className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-center gap-3 pt-2">
+                      <button 
+                        onClick={() => {
+                          const newSchema = [...formSchema];
+                          newSchema[idx].visible = !newSchema[idx].visible;
+                          setFormSchema(newSchema);
+                        }}
+                        title={field.visible ? "Hide Question" : "Show Question"}
+                        className={`p-1.5 rounded-md ${field.visible ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-700 text-slate-400'}`}
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if(window.confirm('Delete this question? Past survey answers for this question will remain in the database but won\'t be visible.')) {
+                            const newSchema = formSchema.filter((_, i) => i !== idx);
+                            setFormSchema(newSchema);
+                          }
+                        }}
+                        className="p-1.5 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                
+                <button 
+                  onClick={() => {
+                    const newSchema = [...formSchema, { id: `field_${Date.now()}`, label: 'New Question', type: 'shortText', options: [], required: false, visible: true } as FormField];
+                    setFormSchema(newSchema);
+                  }}
+                  className="w-full border-2 border-dashed border-white/10 hover:border-indigo-500/50 hover:bg-indigo-500/5 rounded-xl py-4 flex items-center justify-center gap-2 text-slate-400 hover:text-indigo-400 transition-colors"
+                >
+                  <Plus className="w-5 h-5" /> Add Question
+                </button>
+             </div>
+             
+             <div className="p-6 border-t border-white/10 bg-[#111827] flex justify-end gap-3">
+               <button onClick={() => setIsBuilderOpen(false)} className="px-6 py-2 rounded-lg text-slate-300 hover:text-white transition-colors">Cancel</button>
+               <button onClick={() => { saveFormSchema(formSchema); setIsBuilderOpen(false); }} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors">Save Form Schema</button>
+             </div>
           </div>
         </div>
       )}
 
       {/* DRAGGABLE NEW SURVEY MODAL */}
       {isNewSurveyModalOpen && (
-        <Draggable handle=".handle">
-          <div className="absolute top-24 left-1/4 z-50 w-full max-w-md bg-[#111827]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden pointer-events-auto">
-            <div className="handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+        <DraggablePanel initialPosition={{ x: (window.innerWidth / 2) - 200, y: 100 }} className="z-50 w-full max-w-md">
+          <div className="bg-[#111827]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
+            <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
               <div className="w-12 h-1 bg-white/20 rounded-full"></div>
             </div>
-            <div className="p-6 pt-2">
+            <div className="p-6 pt-2 max-h-[85vh] overflow-y-auto custom-scrollbar">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold flex items-center gap-2 text-white">
                   <MapIcon className="w-5 h-5 text-indigo-400" /> New Survey Data
@@ -424,60 +569,49 @@ export default function DashboardProjectPage() {
                 </div>
 
                 <form onSubmit={handleSaveNewSurvey} className="space-y-3 mt-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    {formSettings.houseNo && (
-                      <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1">House No.</label>
-                        <input type="text" value={houseNo} onChange={(e) => setHouseNo(e.target.value)} placeholder="Auto or Enter..." className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
-                      </div>
-                    )}
-                    {formSettings.floors && (
-                      <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1">Floors</label>
-                        <input type="text" value={floors} onChange={(e) => setFloors(e.target.value)} placeholder="e.g. G+1" className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" required />
-                      </div>
-                    )}
-                  </div>
-                  {formSettings.buildingName && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Building Name</label>
-                      <input type="text" value={buildingName} onChange={(e) => setBuildingName(e.target.value)} placeholder="Auto or Enter..." className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
-                    </div>
-                  )}
-                  {formSettings.landUse && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Land Use / Zoning</label>
-                      <select value={landUse} onChange={(e) => setLandUse(e.target.value)} className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
-                        <option value="residential">Residential</option>
-                        <option value="commercial">Commercial</option>
-                        <option value="industrial">Industrial</option>
-                        <option value="mixed">Mixed Use</option>
-                      </select>
-                    </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-3">
-                    {formSettings.condition && (
-                      <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1">Condition</label>
-                        <select value={condition} onChange={(e) => setCondition(e.target.value)} className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
-                          <option value="good">Good</option>
-                          <option value="fair">Fair</option>
-                          <option value="poor">Poor</option>
-                          <option value="ruins">Ruins</option>
+                  {formSchema.filter(f => f.visible).map(field => (
+                    <div key={field.id} className="w-full">
+                      <label className="block text-xs font-medium text-slate-400 mb-1">{field.label} {field.required && <span className="text-red-400">*</span>}</label>
+                      
+                      {field.type === 'shortText' && (
+                        <input 
+                          type="text" 
+                          value={formData[field.id] || ''} 
+                          onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                          required={field.required}
+                          className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+                        />
+                      )}
+                      
+                      {field.type === 'multipleChoice' && (
+                        <select 
+                          value={formData[field.id] || ''} 
+                          onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                          required={field.required}
+                          className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                        >
+                          <option value="" disabled>Select option...</option>
+                          {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
-                      </div>
-                    )}
-                    {formSettings.occupancy && (
-                      <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1">Occupancy</label>
-                        <select value={occupancy} onChange={(e) => setOccupancy(e.target.value)} className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
-                          <option value="occupied">Occupied</option>
-                          <option value="vacant">Vacant</option>
-                          <option value="abandoned">Abandoned</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                      
+                      {field.type === 'combobox' && (
+                        <>
+                          <input 
+                            list={`list_${field.id}`}
+                            value={formData[field.id] || ''} 
+                            onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                            required={field.required}
+                            placeholder="Select or type custom..."
+                            className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+                          />
+                          <datalist id={`list_${field.id}`}>
+                            {field.options.map(opt => <option key={opt} value={opt} />)}
+                          </datalist>
+                        </>
+                      )}
+                    </div>
+                  ))}
                   <button type="submit" disabled={fetchingOsm} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-4 py-2 mt-4 text-sm font-medium transition-colors disabled:opacity-50">
                     Save Survey
                   </button>
@@ -485,17 +619,17 @@ export default function DashboardProjectPage() {
               </div>
             </div>
           </div>
-        </Draggable>
+        </DraggablePanel>
       )}
 
       {/* DRAGGABLE VIEW/EDIT SURVEY MODAL */}
       {viewedSurvey && (
-        <Draggable handle=".handle">
-          <div className="absolute top-24 left-1/4 z-50 w-full max-w-md bg-[#111827]/95 backdrop-blur-2xl border border-indigo-500/30 rounded-2xl shadow-[0_0_50px_rgba(99,102,241,0.2)] overflow-hidden pointer-events-auto">
-            <div className="handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+        <DraggablePanel initialPosition={{ x: (window.innerWidth / 2) - 200, y: 100 }} className="z-50 w-full max-w-md">
+          <div className="bg-[#111827]/95 backdrop-blur-2xl border border-indigo-500/30 rounded-2xl shadow-[0_0_50px_rgba(99,102,241,0.2)] overflow-hidden">
+            <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
               <div className="w-12 h-1 bg-white/20 rounded-full"></div>
             </div>
-            <div className="p-6 pt-2">
+            <div className="p-6 pt-2 max-h-[85vh] overflow-y-auto custom-scrollbar">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold flex items-center gap-2 text-white">
                   <span className="bg-indigo-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">{viewedSurvey.index}</span>
@@ -516,67 +650,55 @@ export default function DashboardProjectPage() {
               </div>
 
               <form onSubmit={handleUpdateSurvey} className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  {formSettings.houseNo && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">House No.</label>
-                      <input type="text" value={houseNo} onChange={(e) => setHouseNo(e.target.value)} className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                {formSchema.filter(f => f.visible).map(field => (
+                    <div key={field.id} className="w-full">
+                      <label className="block text-xs font-medium text-slate-400 mb-1">{field.label} {field.required && <span className="text-red-400">*</span>}</label>
+                      
+                      {field.type === 'shortText' && (
+                        <input 
+                          type="text" 
+                          value={formData[field.id] || ''} 
+                          onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                          required={field.required}
+                          className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+                        />
+                      )}
+                      
+                      {field.type === 'multipleChoice' && (
+                        <select 
+                          value={formData[field.id] || ''} 
+                          onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                          required={field.required}
+                          className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                        >
+                          <option value="" disabled>Select option...</option>
+                          {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                      )}
+                      
+                      {field.type === 'combobox' && (
+                        <>
+                          <input 
+                            list={`list_${field.id}`}
+                            value={formData[field.id] || ''} 
+                            onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                            required={field.required}
+                            className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+                          />
+                          <datalist id={`list_${field.id}`}>
+                            {field.options.map(opt => <option key={opt} value={opt} />)}
+                          </datalist>
+                        </>
+                      )}
                     </div>
-                  )}
-                  {formSettings.floors && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Floors</label>
-                      <input type="text" value={floors} onChange={(e) => setFloors(e.target.value)} className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" required />
-                    </div>
-                  )}
-                </div>
-                {formSettings.buildingName && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Building Name</label>
-                    <input type="text" value={buildingName} onChange={(e) => setBuildingName(e.target.value)} className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
-                  </div>
-                )}
-                {formSettings.landUse && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Land Use / Zoning</label>
-                    <select value={landUse} onChange={(e) => setLandUse(e.target.value)} className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
-                      <option value="residential">Residential</option>
-                      <option value="commercial">Commercial</option>
-                      <option value="industrial">Industrial</option>
-                      <option value="mixed">Mixed Use</option>
-                    </select>
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-3">
-                  {formSettings.condition && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Condition</label>
-                      <select value={condition} onChange={(e) => setCondition(e.target.value)} className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
-                        <option value="good">Good</option>
-                        <option value="fair">Fair</option>
-                        <option value="poor">Poor</option>
-                        <option value="ruins">Ruins</option>
-                      </select>
-                    </div>
-                  )}
-                  {formSettings.occupancy && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Occupancy</label>
-                      <select value={occupancy} onChange={(e) => setOccupancy(e.target.value)} className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
-                        <option value="occupied">Occupied</option>
-                        <option value="vacant">Vacant</option>
-                        <option value="abandoned">Abandoned</option>
-                      </select>
-                    </div>
-                  )}
-                </div>
+                  ))}
                 <button type="submit" className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-4 py-2 mt-4 text-sm font-medium transition-colors">
                   <Edit2 className="w-4 h-4" /> Save Changes
                 </button>
               </form>
             </div>
           </div>
-        </Draggable>
+        </DraggablePanel>
       )}
 
     </div>

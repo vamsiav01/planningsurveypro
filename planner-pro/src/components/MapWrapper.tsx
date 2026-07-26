@@ -5,8 +5,9 @@ import { MapContainer, TileLayer, Marker, useMapEvents, LayersControl, useMap, P
 import L from "leaflet";
 import "leaflet-draw";
 import 'leaflet.heat';
-import { MapPin, Search, Navigation } from "lucide-react";
+import { MapPin, Search, Navigation, Hexagon, Edit3, Trash2, MousePointer2 } from "lucide-react";
 import { renderToStaticMarkup } from "react-dom/server";
+import DraggablePanel from "@/components/DraggablePanel";
 
 // Fix default icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -46,35 +47,37 @@ function ClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) =
   return null;
 }
 
-function LeafletLogic({ surveys, showHeatmap }: { surveys: any[], showHeatmap: boolean }) {
+function LeafletLogic({ surveys, showHeatmap, setDrawRefs }: { surveys: any[], showHeatmap: boolean, setDrawRefs: (map: L.Map, drawnItems: L.FeatureGroup) => void }) {
   const map = useMap();
   const heatLayerRef = useRef<any>(null);
 
-  // Initialize Leaflet Draw
+  // Initialize Leaflet Draw FeatureGroup
   useEffect(() => {
     if (!map) return;
     const drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
+    
+    // We still initialize the control so the handlers exist internally, but CSS hides the UI
     const drawControl = new L.Control.Draw({
       edit: { featureGroup: drawnItems },
-      draw: {
-        polygon: { allowIntersection: false, showArea: true },
-        polyline: false, circle: false, circlemarker: false, marker: {}, rectangle: {}
-      }
+      draw: { polygon: true, marker: true, polyline: false, circle: false, circlemarker: false, rectangle: true }
     });
     map.addControl(drawControl);
     map.on(L.Draw.Event.CREATED, (e: any) => drawnItems.addLayer(e.layer));
+
+    setDrawRefs(map, drawnItems);
+
     return () => {
       map.removeControl(drawControl);
       map.off(L.Draw.Event.CREATED);
     };
-  }, [map]);
+  }, [map, setDrawRefs]);
 
   // Initialize Heatmap
   useEffect(() => {
     if (!map) return;
     if (showHeatmap && surveys.length > 0) {
-      const points = surveys.map(s => [s.location?.lat, s.location?.lng, 1]); // lat, lng, intensity
+      const points = surveys.map(s => [s.location?.lat, s.location?.lng, 1]);
       heatLayerRef.current = (L as any).heatLayer(points, { radius: 25, blur: 15 }).addTo(map);
     } else if (heatLayerRef.current) {
       map.removeLayer(heatLayerRef.current);
@@ -150,17 +153,123 @@ interface MapWrapperProps {
 
 export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeBuildingGeom, activeClickLoc, showHeatmap, showMarkers }: MapWrapperProps) {
   const mapRef = useRef<L.Map | null>(null);
+  
+  // Storing refs for programmatic drawing
+  const internalMapRef = useRef<L.Map | null>(null);
+  const drawnItemsRef = useRef<L.FeatureGroup | null>(null);
+  const [activeTool, setActiveTool] = useState<string | null>(null);
+
+  const setDrawRefs = (map: L.Map, drawnItems: L.FeatureGroup) => {
+    internalMapRef.current = map;
+    drawnItemsRef.current = drawnItems;
+  };
+
+  // The L.Draw instances are attached to the map via handler maps
+  const triggerDraw = (type: 'polygon' | 'marker') => {
+    if (!internalMapRef.current) return;
+    setActiveTool(type);
+    
+    // In Leaflet.draw, new instances are created or handlers are invoked.
+    if (type === 'polygon') {
+      new (L.Draw as any).Polygon(internalMapRef.current).enable();
+    } else if (type === 'marker') {
+      new (L.Draw as any).Marker(internalMapRef.current).enable();
+    }
+  };
+
+  const triggerEdit = (type: 'edit' | 'remove') => {
+    if (!internalMapRef.current || !drawnItemsRef.current) return;
+    setActiveTool(type);
+    
+    if (type === 'edit') {
+      new (L.EditToolbar as any).Edit(internalMapRef.current, {
+        featureGroup: drawnItemsRef.current,
+      }).enable();
+    } else if (type === 'remove') {
+      new (L.EditToolbar as any).Delete(internalMapRef.current, {
+        featureGroup: drawnItemsRef.current,
+      }).enable();
+    }
+  };
+
+  const resetTool = () => {
+    setActiveTool(null);
+    // Note: Disabling tools programmatically can be tricky in L.Draw, 
+    // usually clicking on the map finishes the action. 
+    // For this UI, resetting state is visual.
+  };
+
+  // Reset active tool when map is clicked since L.Draw handles completion
+  useEffect(() => {
+    if (!internalMapRef.current) return;
+    internalMapRef.current.on(L.Draw.Event.CREATED, () => setActiveTool(null));
+    internalMapRef.current.on('draw:editstop', () => setActiveTool(null));
+    internalMapRef.current.on('draw:deletestop', () => setActiveTool(null));
+  }, []);
+
 
   return (
     <div className="w-full h-full relative">
       <MapSearchAndGPS mapRef={mapRef} />
 
+      {/* CUSTOM DRAGGABLE DRAWING TOOLBAR */}
+      <DraggablePanel initialPosition={{ x: 24, y: 120 }} className="z-[1000]">
+        <div className="bg-[#111827]/95 backdrop-blur-xl border border-white/10 rounded-2xl p-2 shadow-2xl flex flex-col gap-2 pointer-events-auto">
+          <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-4 mb-2 bg-white/5 flex items-center justify-center rounded-sm hover:bg-white/10 transition-colors">
+            <div className="w-6 h-1 bg-white/20 rounded-full"></div>
+          </div>
+          
+          <button 
+            onClick={() => { setActiveTool(null); }}
+            className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === null ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+            title="Navigate / Inspect"
+          >
+            <MousePointer2 className="w-5 h-5" />
+          </button>
+          <div className="w-full h-[1px] bg-white/10 my-1"></div>
+          <button 
+            onClick={() => triggerDraw('polygon')}
+            className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'polygon' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+            title="Draw Polygon"
+          >
+            <Hexagon className="w-5 h-5" />
+          </button>
+          <button 
+            onClick={() => triggerDraw('marker')}
+            className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'marker' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+            title="Add Map Pin"
+          >
+            <MapPin className="w-5 h-5" />
+          </button>
+          <div className="w-full h-[1px] bg-white/10 my-1"></div>
+          <button 
+            onClick={() => triggerEdit('edit')}
+            className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'edit' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+            title="Edit Shapes"
+          >
+            <Edit3 className="w-5 h-5" />
+          </button>
+          <button 
+            onClick={() => triggerEdit('remove')}
+            className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'remove' ? 'bg-red-600 text-white shadow-lg shadow-red-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+            title="Delete Shapes"
+          >
+            <Trash2 className="w-5 h-5" />
+          </button>
+        </div>
+      </DraggablePanel>
+
       <MapContainer 
-        center={[23.2, 77.4]} // Defaulting closer to the user's screenshot
+        center={[23.2, 77.4]}
         zoom={14} 
         style={{ height: '100%', width: '100%', zIndex: 0 }}
         zoomControl={false}
-        ref={mapRef}
+        ref={(el) => {
+           mapRef.current = el;
+           if (el && !internalMapRef.current) {
+               // Initial mount assignment for outside components
+           }
+        }}
       >
         <LayersControl position="bottomleft">
           <LayersControl.BaseLayer checked name="Satellite">
@@ -178,7 +287,7 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
         </LayersControl>
 
         <ClickHandler onMapClick={onMapClick} />
-        <LeafletLogic surveys={surveys} showHeatmap={showHeatmap} />
+        <LeafletLogic surveys={surveys} showHeatmap={showHeatmap} setDrawRefs={setDrawRefs} />
         
         {/* Temporary click marker for new survey */}
         {activeClickLoc && (
@@ -196,9 +305,9 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
             <Marker 
               key={survey.id} 
               position={[survey.location.lat, survey.location.lng]}
-              icon={createNumberedIcon(`S${index + 1}`)}
+              icon={createNumberedIcon(`S${(index as number) + 1}`)}
               eventHandlers={{
-                click: () => onSurveyClick(survey, `S${index + 1}`)
+                click: () => onSurveyClick(survey, `S${(index as number) + 1}`)
               }}
             />
           )
