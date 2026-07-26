@@ -22,6 +22,7 @@ interface MapWrapperProps {
   surveys: any[];
   onMapClick: (lat: number, lng: number, overpassTags?: any) => void;
   onDrawCreate?: (layer: any) => void;
+  onSurveyClick?: (survey: any) => void;
   activeClickLoc: { lat: number; lng: number } | null;
   activeFootprint: {coords: [number, number][], tags: any, id?: string | number} | null;
   loadingFootprint: boolean;
@@ -116,7 +117,7 @@ function GeolocationEvents({ onMapClick }: { onMapClick: (lat: number, lng: numb
   return null;
 }
 
-export default function MapWrapper({ surveys, onMapClick, onDrawCreate, activeClickLoc, activeFootprint, loadingFootprint }: MapWrapperProps) {
+export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurveyClick, activeClickLoc, activeFootprint, loadingFootprint }: MapWrapperProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -167,11 +168,15 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, activeCl
                 <Polygon 
                   positions={survey.osmData.coords} 
                   pathOptions={{ color: fillColor, weight: 2, fillColor: fillColor, fillOpacity: 0.5 }}
+                  eventHandlers={{ click: () => onSurveyClick && onSurveyClick(survey) }}
                 >
                   <Tooltip>{survey.answers?.houseNo || survey.answers?.buildingName || 'Surveyed Building'}</Tooltip>
                 </Polygon>
               ) : (
-                <Marker position={[survey.location.lat, survey.location.lng]}>
+                <Marker 
+                  position={[survey.location.lat, survey.location.lng]}
+                  eventHandlers={{ click: () => onSurveyClick && onSurveyClick(survey) }}
+                >
                   <Tooltip>{survey.answers?.houseNo || survey.answers?.buildingName || 'Survey Point'}</Tooltip>
                 </Marker>
               )}

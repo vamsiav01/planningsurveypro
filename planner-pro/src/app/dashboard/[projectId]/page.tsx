@@ -8,7 +8,7 @@ import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc,
 import { db } from "@/lib/firebase";
 import { 
   Loader2, Hexagon, LayoutDashboard, Trash2, User as UserIcon, LogOut, 
-  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save
+  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash
 } from "lucide-react";
 
 // Safe dynamic import for Leaflet map
@@ -23,8 +23,6 @@ const MapWrapper = dynamic(() => import("@/components/MapWrapper"), {
 
 // Helper to calculate area of polygon
 function calculatePolygonArea(coords: [number, number][]) {
-  // Simple approximation for small areas:
-  // Convert lat/lng to meters (very rough approx for display)
   if (coords.length < 3) return 0;
   return Math.floor(Math.random() * 500 + 100); // Temporary placeholder
 }
@@ -47,9 +45,14 @@ export default function Dashboard({ params }: DashboardProps) {
   const [loadingFootprint, setLoadingFootprint] = useState(false);
   
   // Form State
+  const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
   const [houseNo, setHouseNo] = useState("");
   const [floors, setFloors] = useState("1");
   const [zoning, setZoning] = useState("residential");
+  const [condition, setCondition] = useState("good");
+  const [roadAccess, setRoadAccess] = useState("paved");
+  const [occupants, setOccupants] = useState("");
+  const [yearBuilt, setYearBuilt] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -78,16 +81,27 @@ export default function Dashboard({ params }: DashboardProps) {
   }, [projectId, user]);
 
   const handleMapClick = async (lat: number, lng: number) => {
+    // Reset edit mode when clicking a new spot
+    setSelectedSurveyId(null);
+    setHouseNo("");
+    setFloors("1");
+    setZoning("residential");
+    setCondition("good");
+    setRoadAccess("paved");
+    setOccupants("");
+    setYearBuilt("");
+
     setActiveClickLoc({ lat, lng });
     setLoadingFootprint(true);
     setActiveFootprint(null);
     
     try {
+      // Increased radius to 25m for better rural detection
       const q = `
         [out:json][timeout:10];
         (
-          way["building"](around:15, ${lat}, ${lng});
-          relation["building"](around:15, ${lat}, ${lng});
+          way["building"](around:25, ${lat}, ${lng});
+          relation["building"](around:25, ${lat}, ${lng});
         );
         out body;
         >;
@@ -130,6 +144,7 @@ export default function Dashboard({ params }: DashboardProps) {
   };
 
   const handleDrawCreate = (layer: any) => {
+    setSelectedSurveyId(null);
     if (typeof layer.getLatLngs === 'function') {
       const latlngs = layer.getLatLngs()[0];
       const coords = latlngs.map((ll: any) => [ll.lat, ll.lng]);
@@ -139,6 +154,51 @@ export default function Dashboard({ params }: DashboardProps) {
       const ll = layer.getLatLng();
       setActiveClickLoc({ lat: ll.lat, lng: ll.lng });
     }
+  };
+
+  const handleSurveyClick = (survey: any) => {
+    setSelectedSurveyId(survey.id);
+    setActiveClickLoc(survey.location);
+    if (survey.osmData) {
+      setActiveFootprint(survey.osmData);
+    } else {
+      setActiveFootprint(null);
+    }
+
+    setHouseNo(survey.answers?.houseNo || "");
+    setFloors(survey.answers?.floors || "1");
+    setZoning(survey.answers?.zoning || "residential");
+    setCondition(survey.answers?.condition || "good");
+    setRoadAccess(survey.answers?.roadAccess || "paved");
+    setOccupants(survey.answers?.occupants || "");
+    setYearBuilt(survey.answers?.yearBuilt || "");
+  };
+
+  const handleDeleteSurvey = async () => {
+    if (!selectedSurveyId || !user) return;
+    if (!confirm("Are you sure you want to delete this survey?")) return;
+    setSaving(true);
+    try {
+      await deleteDoc(doc(db, `projects/${projectId}/surveys`, selectedSurveyId));
+      closeForm();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const closeForm = () => {
+    setActiveClickLoc(null);
+    setActiveFootprint(null);
+    setSelectedSurveyId(null);
+    setHouseNo("");
+    setFloors("1");
+    setZoning("residential");
+    setCondition("good");
+    setRoadAccess("paved");
+    setOccupants("");
+    setYearBuilt("");
   };
 
   const handleSaveSurvey = async (e: React.FormEvent) => {
@@ -157,20 +217,24 @@ export default function Dashboard({ params }: DashboardProps) {
         answers: {
           houseNo,
           floors,
-          zoning
+          zoning,
+          condition,
+          roadAccess,
+          occupants,
+          yearBuilt
         },
         surveyorId: user.uid,
-        timestamp: serverTimestamp()
+        updatedAt: serverTimestamp()
       };
 
-      await addDoc(collection(db, `projects/${projectId}/surveys`), surveyData);
+      if (selectedSurveyId) {
+        await updateDoc(doc(db, `projects/${projectId}/surveys`, selectedSurveyId), surveyData);
+      } else {
+        (surveyData as any).createdAt = serverTimestamp();
+        await addDoc(collection(db, `projects/${projectId}/surveys`), surveyData);
+      }
       
-      // Reset form
-      setActiveClickLoc(null);
-      setActiveFootprint(null);
-      setHouseNo("");
-      setFloors("1");
-      setZoning("residential");
+      closeForm();
     } catch (error) {
       console.error("Error saving survey:", error);
     } finally {
@@ -231,6 +295,7 @@ export default function Dashboard({ params }: DashboardProps) {
           surveys={surveys} 
           onMapClick={handleMapClick}
           onDrawCreate={handleDrawCreate}
+          onSurveyClick={handleSurveyClick}
           activeClickLoc={activeClickLoc}
           activeFootprint={activeFootprint}
           loadingFootprint={loadingFootprint}
@@ -238,17 +303,17 @@ export default function Dashboard({ params }: DashboardProps) {
 
         {/* Floating Glassmorphism Survey Form */}
         {activeClickLoc && (
-          <div className="absolute top-8 right-8 w-[380px] bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-[1000] overflow-hidden flex flex-col max-h-[calc(100vh-64px)]">
+          <div className="absolute top-8 right-8 w-[400px] bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-[1000] overflow-hidden flex flex-col max-h-[calc(100vh-64px)]">
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-indigo-400" /> New Survey Data
+                <MapPin className="w-5 h-5 text-indigo-400" /> {selectedSurveyId ? "Edit Survey Data" : "New Survey Data"}
               </h2>
-              <button onClick={() => { setActiveClickLoc(null); setActiveFootprint(null); }} className="text-slate-400 hover:text-white">
+              <button onClick={closeForm} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <div className="p-6 overflow-y-auto custom-scrollbar">
+            <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
               {/* Geographic Data Box */}
               <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 mb-4">
                 <h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-2">
@@ -267,65 +332,99 @@ export default function Dashboard({ params }: DashboardProps) {
               </div>
 
               {/* OSM Data Box */}
-              {activeFootprint && (
+              {activeFootprint ? (
                 <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-6">
                   <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-2">
-                    OSM Building Detected
+                    Building Boundary Selected
                   </h3>
                   <div className="text-sm text-blue-100/70 font-mono">
-                    <p>Building ID: {(activeFootprint as any).id || "Manual Draw"}</p>
-                    <p className="mt-1 text-xs text-blue-300/50 italic">* No floor data in OSM, please enter manually.</p>
+                    <p>Source ID: {(activeFootprint as any).id || "Manual Draw"}</p>
                   </div>
+                </div>
+              ) : (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-6">
+                  <p className="text-xs text-amber-300">
+                    No footprint detected by OSM. Use the <strong>Draw Tools</strong> (Left) to trace the building!
+                  </p>
                 </div>
               )}
 
               {/* Input Form */}
-              <form onSubmit={handleSaveSurvey} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">House No.</label>
-                  <input
-                    type="text"
-                    value={houseNo}
-                    onChange={(e) => setHouseNo(e.target.value)}
-                    placeholder="Enter house no...."
-                    className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all"
-                  />
+              <form id="survey-form" onSubmit={handleSaveSurvey} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">House No. / Name</label>
+                    <input type="text" value={houseNo} onChange={(e) => setHouseNo(e.target.value)} placeholder="e.g. 101" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Floors</label>
+                    <input type="text" value={floors} onChange={(e) => setFloors(e.target.value)} placeholder="e.g. 4 or G+3" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
+                  </div>
                 </div>
-                
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Floors</label>
-                  <input
-                    type="text"
-                    value={floors}
-                    onChange={(e) => setFloors(e.target.value)}
-                    placeholder="e.g. 4 or G+3"
-                    className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all"
-                  />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Land Use / Zoning</label>
+                    <select value={zoning} onChange={(e) => setZoning(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none">
+                      <option value="residential" className="bg-slate-900">Residential</option>
+                      <option value="commercial" className="bg-slate-900">Commercial</option>
+                      <option value="mixed" className="bg-slate-900">Mixed Use</option>
+                      <option value="public" className="bg-slate-900">Public/Govt</option>
+                      <option value="industrial" className="bg-slate-900">Industrial</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Condition</label>
+                    <select value={condition} onChange={(e) => setCondition(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none">
+                      <option value="good" className="bg-slate-900">Good</option>
+                      <option value="fair" className="bg-slate-900">Fair / Average</option>
+                      <option value="dilapidated" className="bg-slate-900">Dilapidated</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Land Use / Zoning</label>
-                  <select
-                    value={zoning}
-                    onChange={(e) => setZoning(e.target.value)}
-                    className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none"
-                  >
-                    <option value="residential" className="bg-slate-900">residential</option>
-                    <option value="commercial" className="bg-slate-900">commercial</option>
-                    <option value="mixed" className="bg-slate-900">mixed</option>
-                    <option value="public" className="bg-slate-900">public</option>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Road Access</label>
+                  <select value={roadAccess} onChange={(e) => setRoadAccess(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none">
+                    <option value="paved" className="bg-slate-900">Paved Road</option>
+                    <option value="unpaved" className="bg-slate-900">Unpaved / Kutcha</option>
+                    <option value="none" className="bg-slate-900">No Direct Access</option>
                   </select>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="w-full mt-6 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2"
-                >
-                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                  {saving ? "Saving..." : "Save Survey"}
-                </button>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Occupants</label>
+                    <input type="number" value={occupants} onChange={(e) => setOccupants(e.target.value)} placeholder="Estimated" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1">Year Built</label>
+                    <input type="number" value={yearBuilt} onChange={(e) => setYearBuilt(e.target.value)} placeholder="e.g. 2010" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
+                  </div>
+                </div>
               </form>
+            </div>
+            
+            <div className="p-6 border-t border-white/10 bg-white/5 flex gap-3">
+              {selectedSurveyId && (
+                <button
+                  type="button"
+                  onClick={handleDeleteSurvey}
+                  disabled={saving}
+                  className="px-4 py-3 bg-red-500/20 hover:bg-red-500/40 text-red-400 font-semibold rounded-xl transition-all flex items-center justify-center"
+                >
+                  <Trash className="w-5 h-5" />
+                </button>
+              )}
+              <button
+                type="submit"
+                form="survey-form"
+                disabled={saving}
+                className="flex-1 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2"
+              >
+                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                {saving ? "Saving..." : selectedSurveyId ? "Update Survey" : "Save Survey"}
+              </button>
             </div>
           </div>
         )}
