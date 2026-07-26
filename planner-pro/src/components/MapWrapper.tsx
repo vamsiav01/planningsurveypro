@@ -5,7 +5,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents, LayersControl, useMap, P
 import L from "leaflet";
 import "leaflet-draw";
 import 'leaflet.heat';
-import { MapPin, Search, Navigation, Hexagon, Edit3, Trash2, MousePointer2, Activity, Square, Circle, Undo2, Redo2 } from "lucide-react";
+import { MapPin, Search, Navigation, Hexagon, Edit3, Trash2, MousePointer2, Activity, Square, Circle, Undo2, Redo2, Loader2 } from "lucide-react";
 import { renderToStaticMarkup } from "react-dom/server";
 import DraggablePanel from "@/components/DraggablePanel";
 
@@ -39,9 +39,15 @@ const createNumberedIcon = (number?: number | string) => {
 };
 
 function ClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
+  const map = useMap();
   useMapEvents({
     click(e) {
       onMapClick(e.latlng.lat, e.latlng.lng);
+      // Smart panning: center the clicked point, then shift map left (moving point to the right)
+      map.flyTo(e.latlng, map.getZoom(), { animate: true, duration: 0.5 });
+      setTimeout(() => {
+        map.panBy([-300, 0], { animate: true, duration: 0.3 });
+      }, 550);
     },
   });
   return null;
@@ -105,23 +111,52 @@ function LeafletLogic({ surveys, showHeatmap, setDrawRefs, handleLayerCreated, h
 export function MapSearchAndGPS({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null> }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [showResults, setShowResults] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchQuery.trim() || !mapRef.current) return;
+  const performSearch = async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      setShowResults(false);
+      return;
+    }
     setSearching(true);
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`);
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
       const data = await res.json();
-      if (data && data.length > 0) {
-        mapRef.current.flyTo([parseFloat(data[0].lat), parseFloat(data[0].lon)], 18);
-      } else {
-        alert("Location not found");
-      }
+      setSearchResults(data || []);
+      setShowResults(true);
     } catch (err) {
       console.error(err);
     }
     setSearching(false);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    searchTimeoutRef.current = setTimeout(() => {
+      performSearch(value);
+    }, 500);
+  };
+
+  const handleSelectResult = (result: any) => {
+    if (mapRef.current) {
+      mapRef.current.flyTo([parseFloat(result.lat), parseFloat(result.lon)], 18);
+      setSearchQuery(result.name || result.display_name.split(',')[0]);
+      setShowResults(false);
+    }
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    performSearch(searchQuery);
   };
 
   const locateUser = () => {
@@ -130,27 +165,61 @@ export function MapSearchAndGPS({ mapRef }: { mapRef: React.MutableRefObject<L.M
     }
   };
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.search-container')) {
+        setShowResults(false);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
   return (
-    <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[500] flex gap-2 pointer-events-auto">
-      <form onSubmit={handleSearch} className="flex items-center bg-[#111827]/90 backdrop-blur-md border border-white/10 rounded-xl shadow-xl overflow-hidden h-12">
-        <input 
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search map..."
-          className="bg-transparent border-none outline-none text-white px-4 py-2 w-64 text-sm"
-        />
-        <button type="submit" disabled={searching} className="px-4 text-slate-400 hover:text-white transition-colors">
-          <Search className="w-5 h-5" />
+    <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[500] flex flex-col pointer-events-none items-center search-container">
+      <div className="flex gap-2 pointer-events-auto">
+        <form onSubmit={handleSearchSubmit} className="relative">
+          <div className="flex items-center bg-[#111827]/90 backdrop-blur-md border border-white/10 rounded-xl shadow-xl overflow-hidden h-12">
+            <input 
+              type="text"
+              value={searchQuery}
+              onChange={handleInputChange}
+              onFocus={() => { if (searchResults.length > 0) setShowResults(true); }}
+              placeholder="Search map..."
+              className="bg-transparent border-none outline-none text-white px-4 py-2 w-72 text-sm"
+            />
+            <button type="submit" disabled={searching} className="px-4 text-slate-400 hover:text-white transition-colors">
+              {searching ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
+            </button>
+          </div>
+          
+          {/* Autocomplete Dropdown */}
+          {showResults && searchResults.length > 0 && (
+            <div className="absolute top-14 left-0 w-full bg-[#111827]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto custom-scrollbar">
+              {searchResults.map((result, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => handleSelectResult(result)}
+                  className="w-full text-left px-4 py-3 border-b border-white/5 hover:bg-white/10 transition-colors text-sm text-slate-200"
+                >
+                  <div className="font-medium truncate text-white">{result.name || result.display_name.split(',')[0]}</div>
+                  <div className="text-[10px] text-slate-400 truncate mt-0.5">{result.display_name}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </form>
+        
+        <button 
+          onClick={locateUser}
+          title="Live Location"
+          className="w-12 h-12 flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-xl transition-colors shrink-0"
+        >
+          <Navigation className="w-5 h-5" />
         </button>
-      </form>
-      <button 
-        onClick={locateUser}
-        title="Live Location"
-        className="w-12 h-12 flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-xl transition-colors"
-      >
-        <Navigation className="w-5 h-5" />
-      </button>
+      </div>
     </div>
   );
 }
@@ -417,7 +486,15 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
               position={[survey.location.lat, survey.location.lng]}
               icon={createNumberedIcon(`S${(index as number) + 1}`)}
               eventHandlers={{
-                click: () => onSurveyClick(survey, `S${(index as number) + 1}`)
+                click: () => {
+                  onSurveyClick(survey, `S${(index as number) + 1}`);
+                  if (mapRef.current && survey.location) {
+                    mapRef.current.flyTo([survey.location.lat, survey.location.lng], mapRef.current.getZoom(), { animate: true, duration: 0.5 });
+                    setTimeout(() => {
+                      mapRef.current?.panBy([-300, 0], { animate: true, duration: 0.3 });
+                    }, 550);
+                  }
+                }
               }}
             />
           )

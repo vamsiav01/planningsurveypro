@@ -12,6 +12,7 @@ interface Project {
   name: string;
   createdAt: any;
   userId: string;
+  collaborators?: string[];
 }
 
 export default function ProjectsPage() {
@@ -33,12 +34,24 @@ export default function ProjectsPage() {
     const fetchProjects = async () => {
       if (!user) return;
       try {
-        const q = query(collection(db, "projects"), where("userId", "==", user.uid));
-        const snapshot = await getDocs(q);
-        const fetchedProjects: Project[] = [];
-        snapshot.forEach((doc) => {
-          fetchedProjects.push({ id: doc.id, ...doc.data() } as Project);
+        // Query 1: Projects I own
+        const qOwned = query(collection(db, "projects"), where("userId", "==", user.uid));
+        // Query 2: Projects shared with me
+        const qShared = query(collection(db, "projects"), where("collaborators", "array-contains", user.email));
+        
+        const [snapOwned, snapShared] = await Promise.all([getDocs(qOwned), getDocs(qShared)]);
+        
+        const fetchedMap = new Map<string, Project>();
+        
+        snapOwned.forEach((doc) => {
+          fetchedMap.set(doc.id, { id: doc.id, ...doc.data() } as Project);
         });
+        
+        snapShared.forEach((doc) => {
+          fetchedMap.set(doc.id, { id: doc.id, ...doc.data() } as Project);
+        });
+        
+        const fetchedProjects = Array.from(fetchedMap.values());
         setProjects(fetchedProjects.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
       } catch (error) {
         console.error("Error fetching projects:", error);
@@ -61,6 +74,7 @@ export default function ProjectsPage() {
       const docRef = await addDoc(collection(db, "projects"), {
         name: newProjectName.trim(),
         userId: user.uid,
+        collaborators: [],
         createdAt: serverTimestamp(),
       });
       router.push(`/dashboard/${docRef.id}`);
@@ -163,8 +177,13 @@ export default function ProjectsPage() {
               <button
                 key={project.id}
                 onClick={() => router.push(`/dashboard/${project.id}`)}
-                className="bg-[#111827] border border-slate-800 rounded-2xl p-6 hover:border-indigo-500/50 hover:shadow-[0_0_30px_rgba(99,102,241,0.1)] transition-all flex flex-col items-start text-left group min-h-[220px]"
+                className="bg-[#111827] border border-slate-800 rounded-2xl p-6 hover:border-indigo-500/50 hover:shadow-[0_0_30px_rgba(99,102,241,0.1)] transition-all flex flex-col items-start text-left group min-h-[220px] relative"
               >
+                {project.userId !== user?.uid && (
+                  <div className="absolute top-4 right-4 bg-purple-500/10 text-purple-400 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-purple-500/20">
+                    Shared
+                  </div>
+                )}
                 <div className="flex justify-between items-start w-full mb-4">
                   <div className="w-12 h-12 bg-[#0b1121] border border-slate-800 rounded-xl flex items-center justify-center group-hover:scale-110 group-hover:border-indigo-500/30 transition-all">
                     <Folder className="w-6 h-6 text-indigo-400" />

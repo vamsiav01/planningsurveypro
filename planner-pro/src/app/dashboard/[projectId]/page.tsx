@@ -8,7 +8,7 @@ import { doc, getDoc, collection, query, onSnapshot, addDoc, serverTimestamp, de
 import dynamic from "next/dynamic";
 import DraggablePanel from "@/components/DraggablePanel";
 import { SafeErrorBoundary } from "@/components/SafeErrorBoundary";
-import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical, CheckCircle2 } from "lucide-react";
+import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical, CheckCircle2, Share2, Users } from "lucide-react";
 
 const MapWrapper = dynamic(() => import("@/components/MapWrapper"), { 
   ssr: false,
@@ -31,7 +31,7 @@ const getCategoryIcon = (category: string) => {
   return <Map className="w-4 h-4 text-slate-400" />; // fallback
 };
 
-type QuestionType = 'shortText' | 'multipleChoice' | 'combobox';
+type QuestionType = 'shortText' | 'longText' | 'number' | 'date' | 'checkbox' | 'multipleChoice' | 'combobox';
 
 interface FormField {
   id: string;
@@ -83,6 +83,11 @@ export default function DashboardProjectPage() {
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [showMarkers, setShowMarkers] = useState(true);
 
+  // Sharing State
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [sharing, setSharing] = useState(false);
+
   useEffect(() => {
     if (!user) {
       router.push("/");
@@ -118,7 +123,6 @@ export default function DashboardProjectPage() {
     fetchProjectAndSurveys();
   }, [projectId, user, router]);
 
-  // Handle saving the dynamic schema back to the project
   const saveFormSchema = async (newSchema: FormField[]) => {
     setFormSchema(newSchema);
     try {
@@ -127,6 +131,47 @@ export default function DashboardProjectPage() {
       });
     } catch (err) {
       console.error("Error saving schema", err);
+    }
+  };
+
+  const handleAddCollaborator = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim() || !project) return;
+    
+    setSharing(true);
+    try {
+      const currentCollaborators = project.collaborators || [];
+      if (currentCollaborators.includes(inviteEmail.trim().toLowerCase())) {
+        alert("This user is already a collaborator!");
+        setSharing(false);
+        return;
+      }
+      
+      const newCollaborators = [...currentCollaborators, inviteEmail.trim().toLowerCase()];
+      await updateDoc(doc(db, "projects", projectId as string), {
+        collaborators: newCollaborators
+      });
+      
+      setProject({ ...project, collaborators: newCollaborators });
+      setInviteEmail("");
+    } catch (err) {
+      console.error("Error adding collaborator", err);
+      alert("Failed to add collaborator.");
+    }
+    setSharing(false);
+  };
+
+  const handleRemoveCollaborator = async (email: string) => {
+    if (!project) return;
+    try {
+      const newCollaborators = (project.collaborators || []).filter((e: string) => e !== email);
+      await updateDoc(doc(db, "projects", projectId as string), {
+        collaborators: newCollaborators
+      });
+      setProject({ ...project, collaborators: newCollaborators });
+    } catch (err) {
+      console.error("Error removing collaborator", err);
+      alert("Failed to remove collaborator.");
     }
   };
 
@@ -266,17 +311,7 @@ export default function DashboardProjectPage() {
     );
   }
 
-  // Dynamic Analytics Calculations: find the first multiple choice/combobox field to act as the primary category
-  const categoryField = (formSchema || []).filter(f => f).find(f => (f.type === 'combobox' || f.type === 'multipleChoice') && f.visible);
-  
-  const dynamicCounts = surveys.reduce((acc, survey) => {
-    if (!categoryField) return acc;
-    // Support legacy data
-    const ans = (survey.answers && survey.answers[categoryField.id]) || survey[categoryField.id] || 'Uncategorized';
-    if (!ans) return acc;
-    acc[ans] = (acc[ans] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  // Dynamic Analytics Calculation is now done inline for all categorical fields
 
   return (
     <div className="relative w-screen h-screen bg-[#0b1121] overflow-hidden font-sans">
@@ -363,9 +398,15 @@ export default function DashboardProjectPage() {
                 ))}
               </div>
               
-              <button onClick={() => setIsBuilderOpen(true)} className="w-full flex items-center justify-center gap-2 text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/10 rounded-xl py-2 mt-4 text-sm font-medium transition-colors">
-                <Settings2 className="w-4 h-4" /> Form Builder
-              </button>
+              
+              <div className="grid grid-cols-2 gap-2 mt-4">
+                <button onClick={() => setIsBuilderOpen(true)} className="flex items-center justify-center gap-2 text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/10 rounded-xl py-2 text-sm font-medium transition-colors">
+                  <Settings2 className="w-4 h-4" /> Form Builder
+                </button>
+                <button onClick={() => setIsShareModalOpen(true)} className="flex items-center justify-center gap-2 text-purple-400 hover:text-purple-300 border border-purple-500/30 hover:bg-purple-500/10 rounded-xl py-2 text-sm font-medium transition-colors">
+                  <Share2 className="w-4 h-4" /> Share
+                </button>
+              </div>
             </div>
 
             <div className="mt-auto shrink-0">
@@ -380,21 +421,40 @@ export default function DashboardProjectPage() {
                   <span className="text-2xl font-bold text-white">{surveys.length}</span>
                 </div>
                 
-                {categoryField ? (
-                  <div className="space-y-3 relative z-10 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">By {categoryField.label}</div>
-                    {Object.entries(dynamicCounts).sort((a, b) => b[1] - a[1]).map(([category, count]) => (
-                      <div key={category} className="flex justify-between items-center text-sm">
-                        <span className="flex items-center gap-2 text-slate-400 truncate pr-2 capitalize">
-                          {getCategoryIcon(category)} {category}
-                        </span>
-                        <span className="font-bold text-white">{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-xs text-slate-500 italic relative z-10">Add a Multiple Choice or Combo Box question to see detailed analytics.</div>
-                )}
+                {(() => {
+                  const analyticsFields = (formSchema || []).filter(f => f && (f.type === 'combobox' || f.type === 'multipleChoice') && f.visible);
+                  
+                  if (analyticsFields.length === 0) {
+                    return <div className="text-xs text-slate-500 italic relative z-10">Add a Multiple Choice or Combo Box question to see detailed analytics.</div>;
+                  }
+
+                  return (
+                    <div className="space-y-6 relative z-10 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar pb-4">
+                      {analyticsFields.map(field => {
+                        const counts = surveys.reduce((acc, survey) => {
+                          const ans = (survey.answers && survey.answers[field.id]) || survey[field.id];
+                          if (!ans) return acc;
+                          acc[ans] = (acc[ans] || 0) + 1;
+                          return acc;
+                        }, {} as Record<string, number>);
+                        
+                        return (
+                          <div key={field.id} className="space-y-3">
+                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2 pb-1 border-b border-indigo-500/20">By {field.label}</div>
+                            {Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([category, count]) => (
+                              <div key={category} className="flex justify-between items-center text-sm">
+                                <span className="flex items-center gap-2 text-slate-300 truncate pr-2 capitalize">
+                                  {getCategoryIcon(category)} {category}
+                                </span>
+                                <span className="font-bold text-white bg-white/10 px-2 py-0.5 rounded-md">{count}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -452,6 +512,10 @@ export default function DashboardProjectPage() {
                             className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
                           >
                             <option value="shortText">Short Answer</option>
+                            <option value="longText">Paragraph / Long Text</option>
+                            <option value="number">Number</option>
+                            <option value="date">Date</option>
+                            <option value="checkbox">Checkbox (Yes/No)</option>
                             <option value="multipleChoice">Multiple Choice</option>
                             <option value="combobox">Combo Box (Dropdown + Manual)</option>
                           </select>
@@ -522,11 +586,96 @@ export default function DashboardProjectPage() {
         </SafeErrorBoundary>
       )}
 
+      {/* SHARE MODAL */}
+      {isShareModalOpen && (
+        <SafeErrorBoundary componentName="Share Project Modal">
+          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md bg-[#0f172a] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden pointer-events-auto flex flex-col">
+              <div className="p-6 border-b border-white/10 flex justify-between items-center bg-[#111827]">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Share2 className="w-5 h-5 text-purple-500" /> Share Project
+                </h2>
+                <button onClick={() => setIsShareModalOpen(false)} className="text-slate-400 hover:text-white transition-colors p-1 rounded-full hover:bg-white/10">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-6">
+                <p className="text-sm text-slate-400 mb-6">
+                  Invite collaborators to your project by email. They will see this project on their dashboard when they log in.
+                </p>
+
+                <form onSubmit={handleAddCollaborator} className="flex gap-2 mb-8">
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="Enter email address..."
+                    className="flex-1 bg-[#0b1121] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors"
+                    required
+                  />
+                  <button
+                    type="submit"
+                    disabled={sharing}
+                    className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shrink-0"
+                  >
+                    {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Invite"}
+                  </button>
+                </form>
+
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <Users className="w-4 h-4" /> Current Collaborators
+                  </h3>
+                  
+                  <div className="bg-[#0b1121] border border-white/5 rounded-xl divide-y divide-white/5">
+                    <div className="flex items-center justify-between p-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white">
+                          O
+                        </div>
+                        <div className="text-sm">
+                          <p className="text-white font-medium">Owner</p>
+                          <p className="text-xs text-slate-500">Project Creator</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {(project?.collaborators || []).map((email: string) => (
+                      <div key={email} className="flex items-center justify-between p-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-300">
+                            {email.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="text-sm truncate max-w-[180px]">
+                            <p className="text-slate-300 truncate">{email}</p>
+                            <p className="text-xs text-slate-500">Editor</p>
+                          </div>
+                        </div>
+                        {project?.userId === user?.uid && (
+                          <button 
+                            onClick={() => handleRemoveCollaborator(email)}
+                            className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-400/10 transition-colors"
+                            title="Remove access"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </SafeErrorBoundary>
+      )}
+
       {/* DRAGGABLE NEW SURVEY MODAL */}
       {isNewSurveyModalOpen && (
         <SafeErrorBoundary componentName="New Survey Modal">
-          <DraggablePanel initialPosition={{ x: typeof window !== 'undefined' ? (window.innerWidth / 2) - 200 : 400, y: 100 }} className="z-50 w-full max-w-md">
-            <div className="bg-[#111827]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
+          <DraggablePanel initialPosition={{ x: 40, y: 100 }} className="z-50 w-full max-w-md">
+            <div className="bg-[#111827]/70 backdrop-blur-2xl border border-indigo-500/30 rounded-2xl shadow-[0_0_50px_rgba(99,102,241,0.2)] overflow-hidden">
             <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
               <div className="w-12 h-1 bg-white/20 rounded-full"></div>
             </div>
@@ -590,6 +739,49 @@ export default function DashboardProjectPage() {
                           className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
                         />
                       )}
+
+                      {field.type === 'longText' && (
+                        <textarea 
+                          value={formData[field.id] || ''} 
+                          onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                          required={field.required}
+                          rows={3}
+                          className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 resize-y" 
+                        />
+                      )}
+
+                      {field.type === 'number' && (
+                        <input 
+                          type="number" 
+                          value={formData[field.id] || ''} 
+                          onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                          required={field.required}
+                          className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+                        />
+                      )}
+
+                      {field.type === 'date' && (
+                        <input 
+                          type="date" 
+                          value={formData[field.id] || ''} 
+                          onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                          required={field.required}
+                          className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark]" 
+                        />
+                      )}
+
+                      {field.type === 'checkbox' && (
+                        <label className="flex items-center gap-3 cursor-pointer py-1">
+                          <input 
+                            type="checkbox" 
+                            checked={formData[field.id] === 'true'} 
+                            onChange={(e) => setFormData({...formData, [field.id]: e.target.checked ? 'true' : 'false'})} 
+                            required={field.required && formData[field.id] !== 'true'}
+                            className="w-4 h-4 rounded border-white/20 bg-[#0b1121] text-indigo-500 focus:ring-indigo-500/50" 
+                          />
+                          <span className="text-sm text-slate-300">Yes</span>
+                        </label>
+                      )}
                       
                       {field.type === 'multipleChoice' && (
                         <select 
@@ -634,8 +826,8 @@ export default function DashboardProjectPage() {
       {/* DRAGGABLE VIEW/EDIT SURVEY MODAL */}
       {viewedSurvey && (
         <SafeErrorBoundary componentName="Edit Survey Modal">
-          <DraggablePanel initialPosition={{ x: typeof window !== 'undefined' ? (window.innerWidth / 2) - 200 : 400, y: 100 }} className="z-50 w-full max-w-md">
-            <div className="bg-[#111827]/95 backdrop-blur-2xl border border-indigo-500/30 rounded-2xl shadow-[0_0_50px_rgba(99,102,241,0.2)] overflow-hidden">
+          <DraggablePanel initialPosition={{ x: 40, y: 100 }} className="z-50 w-full max-w-md">
+            <div className="bg-[#111827]/70 backdrop-blur-2xl border border-indigo-500/30 rounded-2xl shadow-[0_0_50px_rgba(99,102,241,0.2)] overflow-hidden">
               <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
                 <div className="w-12 h-1 bg-white/20 rounded-full"></div>
               </div>
@@ -672,6 +864,49 @@ export default function DashboardProjectPage() {
                             required={field.required}
                             className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
                           />
+                        )}
+
+                        {field.type === 'longText' && (
+                          <textarea 
+                            value={formData[field.id] || ''} 
+                            onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                            required={field.required}
+                            rows={3}
+                            className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 resize-y" 
+                          />
+                        )}
+
+                        {field.type === 'number' && (
+                          <input 
+                            type="number" 
+                            value={formData[field.id] || ''} 
+                            onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                            required={field.required}
+                            className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+                          />
+                        )}
+
+                        {field.type === 'date' && (
+                          <input 
+                            type="date" 
+                            value={formData[field.id] || ''} 
+                            onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                            required={field.required}
+                            className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark]" 
+                          />
+                        )}
+
+                        {field.type === 'checkbox' && (
+                          <label className="flex items-center gap-3 cursor-pointer py-1">
+                            <input 
+                              type="checkbox" 
+                              checked={formData[field.id] === 'true'} 
+                              onChange={(e) => setFormData({...formData, [field.id]: e.target.checked ? 'true' : 'false'})} 
+                              required={field.required && formData[field.id] !== 'true'}
+                              className="w-4 h-4 rounded border-white/20 bg-[#0b1121] text-indigo-500 focus:ring-indigo-500/50" 
+                            />
+                            <span className="text-sm text-slate-300">Yes</span>
+                          </label>
                         )}
                         
                         {field.type === 'multipleChoice' && (
