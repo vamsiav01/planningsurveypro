@@ -93,7 +93,7 @@ export default function DashboardProjectPage() {
         if (projectDoc.exists()) {
           const pData = projectDoc.data();
           setProject({ id: projectDoc.id, ...pData });
-          setFormSchema(pData.formSchema || DEFAULT_SCHEMA);
+          setFormSchema(Array.isArray(pData.formSchema) ? pData.formSchema : DEFAULT_SCHEMA);
         } else {
           router.push("/projects");
           return;
@@ -139,9 +139,9 @@ export default function DashboardProjectPage() {
     
     // Clear dynamic form data, populate defaults
     const initialData: Record<string, string> = {};
-    formSchema.forEach(field => {
-      if (field.type === 'multipleChoice' && field.options.length > 0) {
-        initialData[field.id] = field.options[0];
+    (formSchema || []).forEach(field => {
+      if (field.type === 'multipleChoice' && (field.options || []).length > 0) {
+        initialData[field.id] = (field.options || [])[0];
       } else {
         initialData[field.id] = "";
       }
@@ -204,10 +204,10 @@ export default function DashboardProjectPage() {
     
     // Set dynamic form state to edit mode (supporting legacy flat fields)
     const editData: Record<string, string> = {};
-    formSchema.forEach(field => {
+    (formSchema || []).forEach(field => {
       editData[field.id] = (survey.answers && survey.answers[field.id]) 
                            || survey[field.id] 
-                           || (field.type === 'multipleChoice' && field.options.length > 0 ? field.options[0] : "");
+                           || (field.type === 'multipleChoice' && (field.options || []).length > 0 ? (field.options || [])[0] : "");
     });
     setFormData(editData);
     setViewedSurvey({ ...survey, index });
@@ -266,7 +266,7 @@ export default function DashboardProjectPage() {
   }
 
   // Dynamic Analytics Calculations: find the first multiple choice/combobox field to act as the primary category
-  const categoryField = formSchema.find(f => (f.type === 'combobox' || f.type === 'multipleChoice') && f.visible);
+  const categoryField = (formSchema || []).find(f => (f.type === 'combobox' || f.type === 'multipleChoice') && f.visible);
   
   const dynamicCounts = surveys.reduce((acc, survey) => {
     if (!categoryField) return acc;
@@ -411,7 +411,7 @@ export default function DashboardProjectPage() {
              </div>
              
              <div className="p-6 overflow-y-auto flex-1 space-y-4 custom-scrollbar">
-                {formSchema.map((field, idx) => (
+                {(formSchema || []).map((field, idx) => (
                   <div key={field.id} className={`bg-[#1e293b] border ${field.visible ? 'border-white/10' : 'border-white/5 opacity-60'} rounded-xl p-4 flex gap-4 transition-opacity`}>
                     <div className="text-slate-500 cursor-grab active:cursor-grabbing mt-2">
                       <GripVertical className="w-5 h-5" />
@@ -457,7 +457,7 @@ export default function DashboardProjectPage() {
                           <label className="block text-xs font-medium text-slate-400 mb-1">Options (comma separated)</label>
                           <input 
                             type="text" 
-                            value={field.options.join(', ')} 
+                            value={(field.options || []).join(', ')} 
                             onChange={(e) => {
                               const newSchema = [...formSchema];
                               newSchema[idx].options = e.target.value.split(',').map(s => s.trim()).filter(s => s);
@@ -569,7 +569,7 @@ export default function DashboardProjectPage() {
                 </div>
 
                 <form onSubmit={handleSaveNewSurvey} className="space-y-3 mt-4">
-                  {formSchema.filter(f => f.visible).map(field => (
+                  {(formSchema || []).filter(f => f.visible).map(field => (
                     <div key={field.id} className="w-full">
                       <label className="block text-xs font-medium text-slate-400 mb-1">{field.label} {field.required && <span className="text-red-400">*</span>}</label>
                       
@@ -591,7 +591,7 @@ export default function DashboardProjectPage() {
                           className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                         >
                           <option value="" disabled>Select option...</option>
-                          {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
                       )}
                       
@@ -606,7 +606,7 @@ export default function DashboardProjectPage() {
                             className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
                           />
                           <datalist id={`list_${field.id}`}>
-                            {field.options.map(opt => <option key={opt} value={opt} />)}
+                            {(field.options || []).map(opt => <option key={opt} value={opt} />)}
                           </datalist>
                         </>
                       )}
@@ -650,7 +650,7 @@ export default function DashboardProjectPage() {
               </div>
 
               <form onSubmit={handleUpdateSurvey} className="space-y-3">
-                {formSchema.filter(f => f.visible).map(field => (
+                {(formSchema || []).filter(f => f.visible).map(field => (
                     <div key={field.id} className="w-full">
                       <label className="block text-xs font-medium text-slate-400 mb-1">{field.label} {field.required && <span className="text-red-400">*</span>}</label>
                       
@@ -672,7 +672,7 @@ export default function DashboardProjectPage() {
                           className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                         >
                           <option value="" disabled>Select option...</option>
-                          {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
                       )}
                       
@@ -686,7 +686,7 @@ export default function DashboardProjectPage() {
                             className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
                           />
                           <datalist id={`list_${field.id}`}>
-                            {field.options.map(opt => <option key={opt} value={opt} />)}
+                            {(field.options || []).map(opt => <option key={opt} value={opt} />)}
                           </datalist>
                         </>
                       )}
