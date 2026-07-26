@@ -42,59 +42,42 @@ export default function ProjectsPage() {
     }
   }, [user, authLoading, router]);
 
-  useEffect(() => {
-    let unsubscribeOwned = () => {};
-    let unsubscribeShared = () => {};
-
-    const setupListeners = () => {
-      if (!user) return;
-      
+  const fetchProjects = async () => {
+    if (!user) return;
+    try {
       const qOwned = query(collection(db, "projects"), where("userId", "==", user.uid));
-      
-      let ownedProjects: Project[] = [];
-      let sharedProjects: Project[] = [];
-      
-      const updateState = () => {
-        const fetchedMap = new Map<string, Project>();
-        ownedProjects.forEach(p => fetchedMap.set(p.id, p));
-        sharedProjects.forEach(p => fetchedMap.set(p.id, p));
-        
-        const fetched = Array.from(fetchedMap.values());
-        setProjects(fetched.sort((a, b) => {
-          const timeA = a.updatedAt ? getMillis(a.updatedAt) : getMillis(a.createdAt);
-          const timeB = b.updatedAt ? getMillis(b.updatedAt) : getMillis(b.createdAt);
-          return timeB - timeA;
-        }));
-        setLoading(false);
-      };
+      const ownedSnap = await getDocs(qOwned);
+      const owned = ownedSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
 
-      unsubscribeOwned = onSnapshot(qOwned, { includeMetadataChanges: true }, (snapshot) => {
-        ownedProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-        updateState();
-      }, (error) => {
-        console.error("Error fetching owned projects:", error);
-        setSyncError("Database Read Error: " + error.message);
-      });
-
+      let shared: Project[] = [];
       if (user.email) {
         const qShared = query(collection(db, "projects"), where("collaborators", "array-contains", user.email));
-        unsubscribeShared = onSnapshot(qShared, { includeMetadataChanges: true }, (snapshot) => {
-          sharedProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-          updateState();
-        }, (error) => {
-          console.error("Error fetching shared projects:", error);
-        });
+        const sharedSnap = await getDocs(qShared);
+        shared = sharedSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
       }
-    };
 
+      const all = [...owned, ...shared];
+      const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
+
+      unique.sort((a, b) => {
+        const timeA = a.updatedAt ? getMillis(a.updatedAt) : getMillis(a.createdAt);
+        const timeB = b.updatedAt ? getMillis(b.updatedAt) : getMillis(b.createdAt);
+        return timeB - timeA;
+      });
+
+      setProjects(unique);
+      setSyncError("");
+    } catch (error: any) {
+      console.error("Fetch Error:", error);
+      setSyncError("Database Read Error: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     if (user) {
-      setupListeners();
-      const timeout = setTimeout(() => setLoading(false), 800);
-      return () => {
-        clearTimeout(timeout);
-        unsubscribeOwned();
-        unsubscribeShared();
-      };
+      fetchProjects();
     }
   }, [user]);
 
@@ -117,40 +100,26 @@ export default function ProjectsPage() {
     try {
       const now = serverTimestamp();
       
-      // Generate the REAL document reference synchronously!
       const newDocRef = doc(collection(db, "projects"));
-      const realId = newDocRef.id;
       
-      // Optimistic UI update with REAL ID
-      const tempProject: Project = {
-        id: realId,
-        name: projName,
-        userId: user.uid,
-        collaborators: [],
-        createdAt: { toMillis: () => Date.now() },
-        updatedAt: { toMillis: () => Date.now() },
-      };
-      
-      setProjects(prev => [tempProject, ...prev]);
-      setNewProjectName("");
-      setIsCreating(false);
-
-      // Background cloud sync with REAL ID
-      // Using setDoc ensures the local cache instantly matches the optimistic UI!
-      setDoc(newDocRef, {
+      // Explicitly AWAIT the creation to ensure the cloud accepts it
+      await setDoc(newDocRef, {
         name: projName,
         userId: user.uid,
         collaborators: [],
         createdAt: now,
         updatedAt: now,
-      }).catch(err => {
-        console.error("Background sync error:", err);
-        setSyncError("Database Write Error: " + err.message);
       });
+      
+      setNewProjectName("");
+      
+      // Re-fetch all projects from scratch from the cloud
+      await fetchProjects();
       
     } catch (error: any) {
       console.error("Error creating project:", error);
       setSyncError("Creation Error: " + error.message);
+    } finally {
       setIsCreating(false);
     }
   };
