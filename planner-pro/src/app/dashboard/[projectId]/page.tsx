@@ -11,12 +11,12 @@ import { SafeErrorBoundary } from "@/components/SafeErrorBoundary";
 import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical, CheckCircle2, Share2, Users, Copy, Link, Check, X } from "lucide-react";
 import * as xlsx from 'xlsx';
 
-const OvertureMap = dynamic(() => import("@/components/OvertureMap"), { 
+const MapWrapper = dynamic(() => import("@/components/MapWrapper"), { 
   ssr: false,
   loading: () => (
     <div className="w-full h-full flex items-center justify-center bg-[#0b1121] text-slate-400">
       <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-      <span className="ml-3 font-medium">Connecting to Overture Maps Foundation...</span>
+      <span className="ml-3 font-medium">Loading OpenStreetMap...</span>
     </div>
   )
 });
@@ -418,7 +418,7 @@ export default function DashboardProjectPage() {
       
       {/* ABSOLUTE FULL-SCREEN MAP */}
       <div className="absolute inset-0 z-0">
-        <OvertureMap 
+        <MapWrapper 
           surveys={surveys} 
           onMapClick={handleMapClick} 
           onSurveyClick={handleSurveyClick}
