@@ -146,8 +146,14 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
           relation["building"](${s},${w},${n},${e});
           way["building:part"](${s},${w},${n},${e});
           relation["building:part"](${s},${w},${n},${e});
-          way["amenity"~"college|university|hospital|school|public_building"](${s},${w},${n},${e});
-          relation["amenity"~"college|university|hospital|school|public_building"](${s},${w},${n},${e});
+          way["amenity"="college"](${s},${w},${n},${e});
+          relation["amenity"="college"](${s},${w},${n},${e});
+          way["amenity"="university"](${s},${w},${n},${e});
+          relation["amenity"="university"](${s},${w},${n},${e});
+          way["amenity"="hospital"](${s},${w},${n},${e});
+          relation["amenity"="hospital"](${s},${w},${n},${e});
+          way["amenity"="school"](${s},${w},${n},${e});
+          relation["amenity"="school"](${s},${w},${n},${e});
           way["historic"](${s},${w},${n},${e});
         );out body geom;`;
         const res = await fetch("https://overpass-api.de/api/interpreter", {
@@ -203,7 +209,7 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
           <Polygon 
             key={b.id} 
             positions={b.geom} 
-            pathOptions={{ color: '#6366f1', weight: 1.5, fillColor: '#6366f1', fillOpacity: 0.15 }}
+            pathOptions={{ color: '#8b5cf6', weight: 2, fillColor: '#8b5cf6', fillOpacity: 0.1 }}
             eventHandlers={{
               click: (e) => {
                 L.DomEvent.stopPropagation(e.originalEvent);
@@ -580,10 +586,13 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onAutoB
         }}
       >
         <LayersControl position="bottomleft">
-          <LayersControl.BaseLayer name="Satellite">
+          <LayersControl.BaseLayer checked name="Google Satellite">
+            <TileLayer url='http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}' subdomains={['mt0','mt1','mt2','mt3']} maxZoom={22} />
+          </LayersControl.BaseLayer>
+          <LayersControl.BaseLayer name="ArcGIS Satellite">
             <TileLayer url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' />
           </LayersControl.BaseLayer>
-          <LayersControl.BaseLayer checked name="Standard OSM">
+          <LayersControl.BaseLayer name="Standard OSM">
             <TileLayer url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' />
           </LayersControl.BaseLayer>
           <LayersControl.BaseLayer name="Dark Map">

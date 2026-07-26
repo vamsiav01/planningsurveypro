@@ -45,8 +45,8 @@ interface FormField {
 }
 
 const DEFAULT_SCHEMA: FormField[] = [
-  { id: 'houseNo', label: 'House No. / Plot No.', type: 'shortText', options: [], required: false, visible: true },
   { id: 'buildingName', label: 'Building Name', type: 'shortText', options: [], required: false, visible: true },
+  { id: 'houseNo', label: 'House No. / Plot No.', type: 'shortText', options: [], required: false, visible: true },
   { id: 'landUse', label: 'Land Use / Category', type: 'multipleChoice', options: ['Residential', 'Commercial', 'Industrial', 'Mixed Use', 'Public/Semi-Public', 'Open Space'], required: true, visible: true, showInAnalytics: true },
   { id: 'floors', label: 'Number of Floors', type: 'multipleChoice', options: ['G', 'G+1', 'G+2', 'G+3', 'G+4', 'G+5', 'G+6', 'G+7', 'G+8', 'G+9', 'G+10', 'G+15', 'G+20'], required: true, visible: true },
   { id: 'structureType', label: 'Structural Type', type: 'multipleChoice', options: ['RCC (Concrete)', 'Load Bearing', 'Temporary / Kutcha', 'Wooden / Heritage'], required: false, visible: true, showInAnalytics: true },
