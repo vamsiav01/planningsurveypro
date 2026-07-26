@@ -11,6 +11,7 @@ interface Project {
   id: string;
   name: string;
   createdAt: any;
+  updatedAt?: any;
   userId: string;
   collaborators?: string[];
 }
@@ -54,7 +55,11 @@ export default function ProjectsPage() {
         });
         
         const fetchedProjects = Array.from(fetchedMap.values());
-        setProjects(fetchedProjects.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
+        setProjects(fetchedProjects.sort((a, b) => {
+          const timeA = a.updatedAt ? a.updatedAt.toMillis() : (a.createdAt ? a.createdAt.toMillis() : 0);
+          const timeB = b.updatedAt ? b.updatedAt.toMillis() : (b.createdAt ? b.createdAt.toMillis() : 0);
+          return timeB - timeA;
+        }));
       } catch (error) {
         console.error("Error fetching projects:", error);
       } finally {
@@ -78,6 +83,7 @@ export default function ProjectsPage() {
         userId: user.uid,
         collaborators: [],
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
       router.push(`/dashboard/${docRef.id}`);
     } catch (error) {
@@ -231,7 +237,9 @@ export default function ProjectsPage() {
                 <h3 className="font-semibold text-xl mb-2 text-white line-clamp-1 w-full">{project.name}</h3>
                 <p className="text-sm text-slate-500 mt-auto flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  Created {project.createdAt ? new Date(project.createdAt.toMillis()).toLocaleDateString() : 'Just now'}
+                  {project.updatedAt || project.createdAt 
+                    ? `Updated ${new Date((project.updatedAt || project.createdAt).toMillis()).toLocaleDateString()} at ${new Date((project.updatedAt || project.createdAt).toMillis()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` 
+                    : 'Just now'}
                 </p>
               </button>
             ))}

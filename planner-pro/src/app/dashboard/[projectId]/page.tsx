@@ -139,7 +139,8 @@ export default function DashboardProjectPage() {
     setFormSchema(newSchema);
     try {
       await updateDoc(doc(db, "projects", projectId as string), {
-        formSchema: newSchema
+        formSchema: newSchema,
+        updatedAt: serverTimestamp()
       });
     } catch (err) {
       console.error("Error saving schema", err);
@@ -269,6 +270,8 @@ export default function DashboardProjectPage() {
         userId: user.uid,
         createdAt: serverTimestamp()
       });
+      // Touch project
+      await updateDoc(doc(db, "projects", projectId as string), { updatedAt: serverTimestamp() });
       setIsNewSurveyModalOpen(false);
       setActiveClickLoc(null);
       setActiveBuildingGeom([]);
@@ -284,6 +287,8 @@ export default function DashboardProjectPage() {
       await updateDoc(doc(db, `projects/${projectId}/surveys`, viewedSurvey.id), {
         answers: formData
       });
+      // Touch project
+      await updateDoc(doc(db, "projects", projectId as string), { updatedAt: serverTimestamp() });
       setViewedSurvey(null);
     } catch (error) {
       console.error("Error updating survey:", error);
@@ -295,6 +300,8 @@ export default function DashboardProjectPage() {
     if (window.confirm("Are you sure you want to delete this survey record?")) {
       try {
         await deleteDoc(doc(db, `projects/${projectId}/surveys`, viewedSurvey.id));
+        // Touch project
+        await updateDoc(doc(db, "projects", projectId as string), { updatedAt: serverTimestamp() });
         setViewedSurvey(null);
       } catch (error) {
         console.error("Error deleting survey:", error);
@@ -463,9 +470,9 @@ export default function DashboardProjectPage() {
       {/* FORM BUILDER MODAL */}
       {isBuilderOpen && (
         <SafeErrorBoundary componentName="Form Builder Modal">
-          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="w-full max-w-2xl bg-[#0f172a] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden pointer-events-auto flex flex-col max-h-[90vh]">
-             <div className="p-6 border-b border-white/10 flex justify-between items-center bg-[#111827]">
+          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-2xl bg-black/20 backdrop-blur-3xl border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.1)] overflow-hidden pointer-events-auto flex flex-col max-h-[90vh]">
+             <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/10">
                 <div>
                   <h2 className="text-xl font-bold text-white flex items-center gap-2">
                     <Settings2 className="w-5 h-5 text-indigo-400" /> Form Builder
@@ -711,7 +718,7 @@ export default function DashboardProjectPage() {
       {isNewSurveyModalOpen && (
         <SafeErrorBoundary componentName="New Survey Modal">
           <DraggablePanel initialPosition={{ x: 40, y: 100 }} className="z-50 w-full max-w-md">
-            <div className="bg-[#0b1121]/40 backdrop-blur-[40px] border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.05)] overflow-hidden">
+            <div className="bg-black/20 backdrop-blur-[50px] border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.05)] overflow-hidden">
             <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
               <div className="w-12 h-1 bg-white/30 rounded-full"></div>
             </div>
@@ -863,7 +870,7 @@ export default function DashboardProjectPage() {
       {viewedSurvey && (
         <SafeErrorBoundary componentName="Edit Survey Modal">
           <DraggablePanel initialPosition={{ x: 40, y: 100 }} className="z-50 w-full max-w-md">
-            <div className="bg-[#0b1121]/40 backdrop-blur-[40px] border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.05)] overflow-hidden">
+            <div className="bg-black/20 backdrop-blur-[50px] border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.05)] overflow-hidden">
               <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
                 <div className="w-12 h-1 bg-white/30 rounded-full"></div>
               </div>
