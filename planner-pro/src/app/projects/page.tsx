@@ -66,7 +66,7 @@ export default function ProjectsPage() {
         setLoading(false);
       };
 
-      unsubscribeOwned = onSnapshot(qOwned, (snapshot) => {
+      unsubscribeOwned = onSnapshot(qOwned, { includeMetadataChanges: true }, (snapshot) => {
         ownedProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
         updateState();
       }, (error) => {
@@ -75,7 +75,7 @@ export default function ProjectsPage() {
 
       if (user.email) {
         const qShared = query(collection(db, "projects"), where("collaborators", "array-contains", user.email));
-        unsubscribeShared = onSnapshot(qShared, (snapshot) => {
+        unsubscribeShared = onSnapshot(qShared, { includeMetadataChanges: true }, (snapshot) => {
           sharedProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
           updateState();
         }, (error) => {
@@ -86,7 +86,6 @@ export default function ProjectsPage() {
 
     if (user) {
       setupListeners();
-      // Ensure the loading screen clears even if Firestore connection is slow
       const timeout = setTimeout(() => setLoading(false), 800);
       return () => {
         clearTimeout(timeout);
@@ -103,21 +102,32 @@ export default function ProjectsPage() {
     setIsCreating(true);
     try {
       const now = serverTimestamp();
+      const projName = newProjectName.trim();
       
-      // Fire-and-forget the database write to make it instantaneous.
-      // The onSnapshot listener will immediately pick up this local write!
-      addDoc(collection(db, "projects"), {
-        name: newProjectName.trim(),
+      // Optimistic UI update
+      const tempId = "temp_" + Date.now();
+      const tempProject: Project = {
+        id: tempId,
+        name: projName,
+        userId: user.uid,
+        collaborators: [],
+        createdAt: { toMillis: () => Date.now() },
+        updatedAt: { toMillis: () => Date.now() },
+      };
+      
+      setProjects(prev => [tempProject, ...prev]);
+      setNewProjectName("");
+      setIsCreating(false);
+
+      // Background cloud sync
+      await addDoc(collection(db, "projects"), {
+        name: projName,
         userId: user.uid,
         collaborators: [],
         createdAt: now,
         updatedAt: now,
-      }).catch(error => {
-        console.error("Error creating project in background:", error);
       });
       
-      setNewProjectName("");
-      setIsCreating(false);
     } catch (error) {
       console.error("Error creating project:", error);
       setIsCreating(false);
