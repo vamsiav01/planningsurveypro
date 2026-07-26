@@ -248,6 +248,17 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
   const [undoLength, setUndoLength] = useState(0);
   const [redoLength, setRedoLength] = useState(0);
 
+  // Automatically locate user on mount
+  useEffect(() => {
+    // We add a tiny timeout to ensure MapContainer has fully mounted and initialized mapRef
+    const timer = setTimeout(() => {
+      if (mapRef.current) {
+        mapRef.current.locate({ setView: true, maxZoom: 18 });
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
   const setDrawRefs = (map: L.Map, drawnItems: L.FeatureGroup) => {
     internalMapRef.current = map;
     drawnItemsRef.current = drawnItems;
