@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { 
   Loader2, Hexagon, LayoutDashboard, Trash2, User as UserIcon, LogOut, 
@@ -79,7 +79,7 @@ export default function Dashboard({ params }: DashboardProps) {
   // Fetch Surveys
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, `projects/${projectId}/surveys`));
+    const q = query(collection(db, `projects/${projectId}/surveys`), orderBy("createdAt", "asc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setSurveys(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
@@ -188,12 +188,17 @@ export default function Dashboard({ params }: DashboardProps) {
   };
 
   const handleDeleteSurvey = async () => {
-    if (!selectedSurveyId || !user) return;
+    if (!selectedSurveyId) return;
+    await deleteSurveyById(selectedSurveyId);
+    closeForm();
+  };
+
+  const deleteSurveyById = async (id: string) => {
+    if (!user) return;
     if (!confirm("Are you sure you want to delete this survey?")) return;
     setSaving(true);
     try {
-      await deleteDoc(doc(db, `projects/${projectId}/surveys`, selectedSurveyId));
-      closeForm();
+      await deleteDoc(doc(db, `projects/${projectId}/surveys`, id));
     } catch (error) {
       console.error(error);
     } finally {
@@ -494,6 +499,47 @@ export default function Dashboard({ params }: DashboardProps) {
                     <Building className="w-3.5 h-3.5 text-indigo-400/70" /> {zone}
                   </span>
                   <span className="text-sm font-semibold text-white">{String(count)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Saved Surveys List */}
+          <div className="mt-8">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Saved Surveys</h3>
+            <div className="space-y-3">
+              {surveys.length === 0 && (
+                <div className="text-sm text-slate-500 italic text-center py-4 bg-black/10 rounded-xl border border-white/5">
+                  No surveys saved yet.
+                </div>
+              )}
+              {surveys.map((survey, index) => (
+                <div key={survey.id} className="bg-black/20 border border-white/5 hover:border-white/10 rounded-xl p-4 transition-colors group">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-bold text-white flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs">
+                        S{index + 1}
+                      </div>
+                      {survey.answers?.houseNo || survey.answers?.buildingName || "Survey"}
+                    </span>
+                    <span className="text-xs text-emerald-400 font-medium capitalize">
+                      {survey.answers?.zoning || 'Residential'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-3">
+                    <button 
+                      onClick={() => handleSurveyClick(survey)}
+                      className="flex-1 bg-white/5 hover:bg-indigo-500/20 text-slate-300 hover:text-indigo-400 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <Edit className="w-3.5 h-3.5" /> Edit
+                    </button>
+                    <button 
+                      onClick={() => deleteSurveyById(survey.id)}
+                      className="flex-1 bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-400 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <Trash className="w-3.5 h-3.5" /> Delete
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

@@ -272,7 +272,7 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurvey
         />
 
         {/* Existing Saved Surveys */}
-        {surveys.map((survey) => {
+        {surveys.map((survey, index) => {
           let fillColor = "#8b5cf6"; // Default purple
           if (survey.answers?.floors) {
             const floors = String(survey.answers.floors).toLowerCase();
@@ -283,9 +283,17 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurvey
             else fillColor = "#ef4444"; // Red for G+4 and above
           }
 
+          const sLabel = `S${index + 1}`;
+          const labelIcon = L.divIcon({
+            className: 'custom-survey-label',
+            html: `<div style="background-color: ${fillColor}; color: white; width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; box-shadow: 0 0 4px rgba(0,0,0,0.5);">${sLabel}</div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          });
+
           return (
             <Fragment key={survey.id}>
-              {survey.osmData?.coords ? (
+              {survey.osmData?.coords && (
                 <Polygon 
                   positions={survey.osmData.coords} 
                   pathOptions={{ color: fillColor, weight: 2, fillColor: fillColor, fillOpacity: 0.5 }}
@@ -293,21 +301,35 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurvey
                 >
                   <Tooltip>{survey.answers?.houseNo || survey.answers?.buildingName || 'Surveyed Building'}</Tooltip>
                 </Polygon>
-              ) : (
-                <Marker 
-                  position={[survey.location.lat, survey.location.lng]}
-                  eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onSurveyClick) onSurveyClick(survey); } }}
-                >
-                  <Tooltip>{survey.answers?.houseNo || survey.answers?.buildingName || 'Survey Point'}</Tooltip>
-                </Marker>
               )}
+              
+              <Marker 
+                position={[survey.location.lat, survey.location.lng]}
+                icon={labelIcon}
+                eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onSurveyClick) onSurveyClick(survey); } }}
+              >
+                <Tooltip>{survey.answers?.houseNo || survey.answers?.buildingName || 'Survey Point'}</Tooltip>
+              </Marker>
             </Fragment>
           );
         })}
 
         {/* Active Click Location */}
         {activeClickLoc && (
-          <Marker position={[activeClickLoc.lat, activeClickLoc.lng]} />
+          <Marker 
+            position={[activeClickLoc.lat, activeClickLoc.lng]} 
+            icon={L.divIcon({
+              className: 'active-pin',
+              html: `
+                <div class="relative w-5 h-5">
+                  <div class="absolute inset-0 bg-blue-500 rounded-full animate-ping opacity-75"></div>
+                  <div class="absolute top-[3px] left-[3px] w-3.5 h-3.5 bg-blue-600 rounded-full border-2 border-white shadow-md"></div>
+                </div>
+              `,
+              iconSize: [20, 20],
+              iconAnchor: [10, 10]
+            })}
+          />
         )}
 
         {/* Active Overpass Footprint Outline */}
