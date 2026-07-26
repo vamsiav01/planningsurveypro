@@ -556,10 +556,10 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onAutoB
         }}
       >
         <LayersControl position="bottomleft">
-          <LayersControl.BaseLayer checked name="Satellite">
+          <LayersControl.BaseLayer name="Satellite">
             <TileLayer url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' />
           </LayersControl.BaseLayer>
-          <LayersControl.BaseLayer name="Standard OSM">
+          <LayersControl.BaseLayer checked name="Standard OSM">
             <TileLayer url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' />
           </LayersControl.BaseLayer>
           <LayersControl.BaseLayer name="Dark Map">
