@@ -89,15 +89,25 @@ export default function ProjectsPage() {
     
     const projName = newProjectName.trim();
     
-    // Check for uniqueness
-    const isTaken = projects.some(p => p.name.toLowerCase() === projName.toLowerCase());
-    if (isTaken) {
-      setCreateError(`Somebody has already taken the title "${projName}". Please choose a unique name.`);
+    // 1. Local case-insensitive check against user's own projects
+    const isTakenLocally = projects.some(p => p.name.toLowerCase() === projName.toLowerCase());
+    if (isTakenLocally) {
+      setCreateError(`You already have a project named "${projName}". Please choose a unique name.`);
       return;
     }
     
     setIsCreating(true);
     try {
+      // 2. Global exact-match check against ALL projects in the database
+      const globalCheckQuery = query(collection(db, "projects"), where("name", "==", projName));
+      const globalCheckSnap = await getDocs(globalCheckQuery);
+      
+      if (!globalCheckSnap.empty) {
+        setCreateError(`Somebody has already taken the title "${projName}". Please choose a unique name.`);
+        setIsCreating(false);
+        return;
+      }
+
       const now = serverTimestamp();
       
       const newDocRef = doc(collection(db, "projects"));
