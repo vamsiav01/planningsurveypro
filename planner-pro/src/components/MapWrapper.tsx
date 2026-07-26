@@ -125,7 +125,7 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
   const fetchTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const fetchBuildingsInBounds = async () => {
-    if (map.getZoom() < 16) {
+    if (map.getZoom() < 14) {
       setBuildings([]);
       return;
     }
@@ -140,46 +140,24 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
     // Set loading after a small delay so it doesn't flicker on fast loads, or just set it immediately
     fetchTimeout.current = setTimeout(async () => {
       setIsFetching(true);
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
-
       try {
-        const query = `[out:json][timeout:10];(way["building"](${s},${w},${n},${e});relation["building"](${s},${w},${n},${e});way["building:part"](${s},${w},${n},${e});relation["building:part"](${s},${w},${n},${e}););out body geom;`;
-        
-        let res;
-        try {
-          res = await fetch("https://lz4.overpass-api.de/api/interpreter", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: `data=${encodeURIComponent(query)}`,
-            signal: controller.signal
-          });
-        } catch (e) {
-          // Fallback if first endpoint fails
-          res = await fetch("https://overpass-api.de/api/interpreter", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: `data=${encodeURIComponent(query)}`,
-            signal: controller.signal
-          });
-        }
-
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.elements) {
-            const parsed = data.elements.filter((el: any) => el.geometry).map((el: any) => ({
-              id: el.id,
-              tags: el.tags || {},
-              geom: el.geometry.map((pt: any) => [pt.lat, pt.lon])
-            }));
-            setBuildings(parsed);
-          }
+        const query = `[out:json][timeout:25];(way["building"](${s},${w},${n},${e});relation["building"](${s},${w},${n},${e});way["building:part"](${s},${w},${n},${e});relation["building:part"](${s},${w},${n},${e}););out body geom;`;
+        const res = await fetch("https://overpass-api.de/api/interpreter", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: `data=${encodeURIComponent(query)}`
+        });
+        const data = await res.json();
+        if (data && data.elements) {
+          const parsed = data.elements.filter((el: any) => el.geometry).map((el: any) => ({
+            id: el.id,
+            tags: el.tags || {},
+            geom: el.geometry.map((pt: any) => [pt.lat, pt.lon])
+          }));
+          setBuildings(parsed);
         }
       } catch (err) {
-        console.warn("Overpass Auto Fetch Timeout or Error");
+        console.error("Overpass Auto Fetch Error", err);
       } finally {
         setIsFetching(false);
       }
@@ -566,8 +544,8 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onAutoB
       </DraggablePanel>
 
       <MapContainer 
-        center={[23.2, 77.4]}
-        zoom={14} 
+        center={[23.21, 77.41]}
+        zoom={16} 
         style={{ height: '100%', width: '100%', zIndex: 0 }}
         zoomControl={false}
         ref={(el) => {

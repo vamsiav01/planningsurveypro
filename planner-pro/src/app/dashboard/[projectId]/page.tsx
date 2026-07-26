@@ -16,7 +16,7 @@ const MapWrapper = dynamic(() => import("@/components/MapWrapper"), {
   loading: () => (
     <div className="w-full h-full flex items-center justify-center bg-[#0b1121] text-slate-400">
       <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-      <span className="ml-3 font-medium">Loading OpenStreetMap...</span>
+      <span className="ml-3 font-medium">Loading Professional Maps...</span>
     </div>
   )
 });
@@ -501,6 +501,8 @@ export default function DashboardProjectPage() {
                   </div>
                 ))}
               </div>
+              
+              
               <div className="grid grid-cols-2 gap-2 mt-4">
                 <button onClick={() => setIsBuilderOpen(true)} className="flex items-center justify-center gap-2 text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/10 rounded-xl py-2 text-sm font-medium transition-colors">
                   <Settings2 className="w-4 h-4" /> Form Builder
