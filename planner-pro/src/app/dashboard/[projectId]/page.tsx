@@ -140,8 +140,8 @@ export default function DashboardProjectPage() {
     // Clear dynamic form data, populate defaults
     const initialData: Record<string, string> = {};
     (formSchema || []).filter(f => f).forEach(field => {
-      if (field.type === 'multipleChoice' && (field.options || []).length > 0) {
-        initialData[field.id] = (field.options || [])[0];
+      if (field.type === 'multipleChoice' && (Array.isArray(field.options) ? field.options : []).length > 0) {
+        initialData[field.id] = (Array.isArray(field.options) ? field.options : [])[0];
       } else {
         initialData[field.id] = "";
       }
@@ -207,7 +207,7 @@ export default function DashboardProjectPage() {
     (formSchema || []).filter(f => f).forEach(field => {
       editData[field.id] = (survey.answers && survey.answers[field.id]) 
                            || survey[field.id] 
-                           || (field.type === 'multipleChoice' && (field.options || []).length > 0 ? (field.options || [])[0] : "");
+                           || (field.type === 'multipleChoice' && (Array.isArray(field.options) ? field.options : []).length > 0 ? (Array.isArray(field.options) ? field.options : [])[0] : "");
     });
     setFormData(editData);
     setViewedSurvey({ ...survey, index });
@@ -461,7 +461,7 @@ export default function DashboardProjectPage() {
                           <label className="block text-xs font-medium text-slate-400 mb-1">Options (comma separated)</label>
                           <input 
                             type="text" 
-                            value={(field.options || []).join(', ')} 
+                            value={(Array.isArray(field.options) ? field.options : []).join(', ')} 
                             onChange={(e) => {
                               const newSchema = [...formSchema];
                               newSchema[idx].options = e.target.value.split(',').map(s => s.trim()).filter(s => s);
@@ -595,7 +595,7 @@ export default function DashboardProjectPage() {
                           className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                         >
                           <option value="" disabled>Select option...</option>
-                          {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          {(Array.isArray(field.options) ? field.options : []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
                       )}
                       
@@ -610,7 +610,7 @@ export default function DashboardProjectPage() {
                             className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
                           />
                           <datalist id={`list_${field.id}`}>
-                            {(field.options || []).map(opt => <option key={opt} value={opt} />)}
+                            {(Array.isArray(field.options) ? field.options : []).map(opt => <option key={opt} value={opt} />)}
                           </datalist>
                         </>
                       )}
@@ -676,7 +676,7 @@ export default function DashboardProjectPage() {
                           className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                         >
                           <option value="" disabled>Select option...</option>
-                          {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          {(Array.isArray(field.options) ? field.options : []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
                       )}
                       
@@ -690,7 +690,7 @@ export default function DashboardProjectPage() {
                             className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
                           />
                           <datalist id={`list_${field.id}`}>
-                            {(field.options || []).map(opt => <option key={opt} value={opt} />)}
+                            {(Array.isArray(field.options) ? field.options : []).map(opt => <option key={opt} value={opt} />)}
                           </datalist>
                         </>
                       )}
