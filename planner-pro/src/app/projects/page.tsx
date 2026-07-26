@@ -103,12 +103,17 @@ export default function ProjectsPage() {
     setIsCreating(true);
     try {
       const now = serverTimestamp();
-      const docRef = await addDoc(collection(db, "projects"), {
+      
+      // Fire-and-forget the database write to make it instantaneous.
+      // The onSnapshot listener will immediately pick up this local write!
+      addDoc(collection(db, "projects"), {
         name: newProjectName.trim(),
         userId: user.uid,
         collaborators: [],
         createdAt: now,
         updatedAt: now,
+      }).catch(error => {
+        console.error("Error creating project in background:", error);
       });
       
       setNewProjectName("");
