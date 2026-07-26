@@ -19,11 +19,11 @@ const MapWrapper = dynamic(() => import("@/components/MapWrapper"), {
 });
 
 interface DashboardProps {
-  params: Promise<{ projectId: string }>;
+  params: { projectId: string };
 }
 
 export default function Dashboard({ params }: DashboardProps) {
-  const { projectId } = use(params);
+  const { projectId } = params;
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   
