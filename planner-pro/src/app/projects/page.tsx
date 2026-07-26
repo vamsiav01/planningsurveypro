@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot, doc, setDoc } from "firebase/firestore";
 import { Loader2, Plus, Folder, Map, LogOut, LayoutDashboard, Trash2, User as UserIcon, Hexagon, Link } from "lucide-react";
 
 interface Project {
@@ -104,10 +104,13 @@ export default function ProjectsPage() {
       const now = serverTimestamp();
       const projName = newProjectName.trim();
       
-      // Optimistic UI update
-      const tempId = "temp_" + Date.now();
+      // Generate the REAL document reference synchronously!
+      const newDocRef = doc(collection(db, "projects"));
+      const realId = newDocRef.id;
+      
+      // Optimistic UI update with REAL ID
       const tempProject: Project = {
-        id: tempId,
+        id: realId,
         name: projName,
         userId: user.uid,
         collaborators: [],
@@ -119,14 +122,16 @@ export default function ProjectsPage() {
       setNewProjectName("");
       setIsCreating(false);
 
-      // Background cloud sync
-      await addDoc(collection(db, "projects"), {
+      // Background cloud sync with REAL ID
+      // Using setDoc ensures the local cache instantly matches the optimistic UI!
+      setDoc(newDocRef, {
         name: projName,
         userId: user.uid,
         collaborators: [],
         createdAt: now,
         updatedAt: now,
-      });
+      }).catch(err => console.error("Background sync error:", err));
+      
       
     } catch (error) {
       console.error("Error creating project:", error);
