@@ -125,7 +125,7 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
   const fetchTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const fetchBuildingsInBounds = async () => {
-    if (map.getZoom() < 16) {
+    if (map.getZoom() < 14) {
       setBuildings([]);
       return;
     }
