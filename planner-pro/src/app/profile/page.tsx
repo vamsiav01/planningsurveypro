@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { Loader2, LayoutDashboard, Trash2, User as UserIcon, Hexagon, LogOut, Mail, Clock, Key, Shield, CheckCircle2, Download, BookOpen, Save, RefreshCw, Database } from "lucide-react";
+import { Loader2, LayoutDashboard, Trash2, User as UserIcon, Hexagon, LogOut, Mail, Clock, Key, Shield, CheckCircle2, Download, BookOpen, Save, RefreshCw, Database, Camera } from "lucide-react";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
@@ -17,10 +17,29 @@ export default function ProfilePage() {
     fullName: "",
     organization: "",
     role: "Surveyor",
+    organization: "",
+    role: "Surveyor",
     region: "North Zone",
-    phone: ""
+    phone: "",
+    photoData: ""
   });
   const [saving, setSaving] = useState(false);
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate size (< 1MB)
+      if (file.size > 1024 * 1024) {
+        alert("Image must be smaller than 1MB");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setProfileData({ ...profileData, photoData: event.target?.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -28,11 +47,16 @@ export default function ProfilePage() {
     } else if (user) {
       const fetchProjects = async () => {
         try {
-          const q = query(collection(db, "projects"), where("userId", "==", user.uid), where("isDeleted", "==", false));
-          const querySnapshot = await getDocs(q);
-          const loaded: any[] = [];
-          querySnapshot.forEach((d) => loaded.push({ id: d.id, ...d.data() }));
-          setProjects(loaded);
+          const q1 = query(collection(db, "projects"), where("userId", "==", user.uid), where("isDeleted", "==", false));
+          const q2 = query(collection(db, "projects"), where("collaborators", "array-contains", user.email), where("isDeleted", "==", false));
+          
+          const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+          const projectMap = new Map();
+          
+          snap1.forEach(d => projectMap.set(d.id, { id: d.id, ...d.data() }));
+          snap2.forEach(d => projectMap.set(d.id, { id: d.id, ...d.data() }));
+          
+          setProjects(Array.from(projectMap.values()));
         } catch (e) {
           console.error(e);
         }
@@ -136,8 +160,12 @@ export default function ProfilePage() {
 
         <div className="p-4 border-t border-slate-800/50">
           <div className="flex items-center gap-3 px-4 py-3 mb-2">
-            <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-sm font-medium text-white">
-              {user?.email?.charAt(0).toUpperCase()}
+            <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-sm font-medium text-white overflow-hidden">
+              {profileData.photoData ? (
+                <img src={profileData.photoData} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                user?.email?.charAt(0).toUpperCase()
+              )}
             </div>
             <span className="text-sm font-medium truncate max-w-[120px]">{user?.email}</span>
           </div>
@@ -163,13 +191,24 @@ export default function ProfilePage() {
           <div className="bg-[#121622] border border-white/5 rounded-2xl p-8 flex flex-col items-center shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none"></div>
             
-            <div className="w-20 h-20 rounded-full bg-indigo-600/20 flex items-center justify-center text-3xl font-bold text-indigo-400 shadow-xl border-2 border-indigo-500/30 z-10 mb-4 overflow-hidden">
-              {user?.email?.charAt(0).toUpperCase()}
-            </div>
+            <label className="w-20 h-20 rounded-full bg-indigo-600/20 flex items-center justify-center text-3xl font-bold text-indigo-400 shadow-xl border-2 border-indigo-500/30 z-10 mb-4 overflow-hidden relative cursor-pointer group">
+              {profileData.photoData ? (
+                <img src={profileData.photoData} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                user?.email?.charAt(0).toUpperCase()
+              )}
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Camera className="w-6 h-6 text-white" />
+              </div>
+              <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+            </label>
             
-            <h3 className="text-lg font-bold text-white tracking-widest uppercase z-10">
-              {profileData.fullName || user?.email?.split('@')[0]}
-            </h3>
+            <div className="relative z-10 flex flex-col items-center">
+              <h3 className="text-lg font-bold text-white tracking-widest uppercase">
+                {profileData.fullName || user?.email?.split('@')[0]}
+              </h3>
+              <p className="text-[10px] text-slate-500 italic mt-1">(Editable in Personal Information below)</p>
+            </div>
             {profileData.organization && (
               <p className="text-slate-400 text-xs mt-1 z-10 font-mono">{profileData.organization}</p>
             )}

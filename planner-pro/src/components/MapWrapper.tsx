@@ -53,7 +53,7 @@ function ClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) =
   return null;
 }
 
-function LeafletLogic({ surveys, showHeatmap, setDrawRefs, handleLayerCreated, handleLayerDeleted }: { surveys: any[], showHeatmap: boolean, setDrawRefs: (map: L.Map, drawnItems: L.FeatureGroup) => void, handleLayerCreated: (l: any) => void, handleLayerDeleted: (l: any) => void }) {
+function LeafletLogic({ surveys, showHeatmap, setDrawRefs, handleLayerCreated, handleLayerDeleted, onAutoBuildingClick }: { surveys: any[], showHeatmap: boolean, setDrawRefs: (map: L.Map, drawnItems: L.FeatureGroup) => void, handleLayerCreated: (l: any) => void, handleLayerDeleted: (l: any) => void, onAutoBuildingClick?: (geom: any[], tags: any, lat: number, lng: number) => void }) {
   const map = useMap();
   const heatLayerRef = useRef<any>(null);
 
@@ -73,6 +73,16 @@ function LeafletLogic({ surveys, showHeatmap, setDrawRefs, handleLayerCreated, h
     const onCreate = (e: any) => {
       drawnItems.addLayer(e.layer);
       handleLayerCreated(e.layer);
+
+      if ((e.layerType === 'polygon' || e.layerType === 'rectangle') && onAutoBuildingClick) {
+        let latlngs = e.layer.getLatLngs();
+        // Leaflet polygons can be multi-dimensional arrays, getting the outer ring
+        if (latlngs.length > 0 && Array.isArray(latlngs[0])) latlngs = latlngs[0]; 
+        
+        const geom = latlngs.map((ll: any) => [ll.lat, ll.lng]);
+        const center = e.layer.getBounds().getCenter();
+        onAutoBuildingClick(geom, { name: "Custom Drawn Building" }, center.lat, center.lng);
+      }
     };
     
     const onDelete = (e: any) => {
@@ -567,7 +577,8 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onAutoB
           showHeatmap={showHeatmap} 
           setDrawRefs={setDrawRefs} 
           handleLayerCreated={handleLayerCreated} 
-          handleLayerDeleted={handleLayerDeleted} 
+          handleLayerDeleted={handleLayerDeleted}
+          onAutoBuildingClick={onAutoBuildingClick}
         />
         
         {/* Temporary click marker for new survey */}
