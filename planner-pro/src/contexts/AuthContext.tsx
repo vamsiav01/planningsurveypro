@@ -37,6 +37,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
+      setLoading(false);
       
       if (firebaseUser) {
         try {
@@ -64,12 +65,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             photoURL: firebaseUser.photoURL || "",
             isProfileComplete: false,
           });
-        } finally {
-          setLoading(false);
         }
       } else {
         setProfile(null);
-        setLoading(false);
       }
     });
 
