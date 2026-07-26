@@ -27,6 +27,7 @@ export default function ProjectsPage() {
   const [isJoining, setIsJoining] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [createError, setCreateError] = useState("");
+  const [syncError, setSyncError] = useState("");
 
   const getMillis = (field: any) => {
     if (!field) return 0;
@@ -72,6 +73,7 @@ export default function ProjectsPage() {
         updateState();
       }, (error) => {
         console.error("Error fetching owned projects:", error);
+        setSyncError("Database Read Error: " + error.message);
       });
 
       if (user.email) {
@@ -141,11 +143,14 @@ export default function ProjectsPage() {
         collaborators: [],
         createdAt: now,
         updatedAt: now,
-      }).catch(err => console.error("Background sync error:", err));
+      }).catch(err => {
+        console.error("Background sync error:", err);
+        setSyncError("Database Write Error: " + err.message);
+      });
       
-      
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating project:", error);
+      setSyncError("Creation Error: " + error.message);
       setIsCreating(false);
     }
   };
@@ -213,6 +218,15 @@ export default function ProjectsPage() {
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-y-auto p-12">
         <div className="max-w-5xl mx-auto">
+          
+          {syncError && (
+            <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-xl mb-6 shadow-lg">
+              <h3 className="font-bold flex items-center gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Critical Database Error</h3>
+              <p className="text-sm mt-1">{syncError}</p>
+              <p className="text-xs mt-2 text-red-300">Your Firebase Database is rejecting connections. Your "Test Mode" has likely expired or your Security Rules are blocking access. Please update your Firebase Rules in the console.</p>
+            </div>
+          )}
+
           <h2 className="text-3xl font-bold mb-2 text-white">Welcome back</h2>
           <p className="text-slate-400 mb-10">Select an existing project or create a new one to begin surveying.</p>
           
