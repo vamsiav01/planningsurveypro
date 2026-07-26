@@ -39,27 +39,38 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(firebaseUser);
       
       if (firebaseUser) {
-        // Fetch or create profile in Firestore
-        const userDocRef = doc(db, "users", firebaseUser.uid);
-        const userDoc = await getDoc(userDocRef);
-        
-        if (userDoc.exists()) {
-          setProfile(userDoc.data() as UserProfile);
-        } else {
-          // Create initial profile
-          const initialProfile: UserProfile = {
+        try {
+          // Fetch or create profile in Firestore
+          const userDocRef = doc(db, "users", firebaseUser.uid);
+          const userDoc = await getDoc(userDocRef);
+          
+          if (userDoc.exists()) {
+            setProfile(userDoc.data() as UserProfile);
+          } else {
+            // Create initial profile
+            const initialProfile: UserProfile = {
+              name: firebaseUser.displayName || "",
+              photoURL: firebaseUser.photoURL || "",
+              isProfileComplete: false,
+            };
+            await setDoc(userDocRef, initialProfile);
+            setProfile(initialProfile);
+          }
+        } catch (error) {
+          console.error("Error fetching or creating user profile:", error);
+          // Fallback to a basic profile if Firestore fails (e.g. permission denied)
+          setProfile({
             name: firebaseUser.displayName || "",
             photoURL: firebaseUser.photoURL || "",
             isProfileComplete: false,
-          };
-          await setDoc(userDocRef, initialProfile);
-          setProfile(initialProfile);
+          });
+        } finally {
+          setLoading(false);
         }
       } else {
         setProfile(null);
+        setLoading(false);
       }
-      
-      setLoading(false);
     });
 
     return () => unsubscribe();
