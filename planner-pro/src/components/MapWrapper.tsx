@@ -649,7 +649,7 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onAutoB
                   }}
                 />
               )}
-            </React.Fragment>
+            </Fragment>
           );
         })}
       </MapContainer>
