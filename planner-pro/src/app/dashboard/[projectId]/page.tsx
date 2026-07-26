@@ -310,7 +310,7 @@ export default function DashboardProjectPage() {
       </div>
 
       {/* DRAGGABLE RIGHT SIDEBAR */}
-      <DraggablePanel initialPosition={{ x: window.innerWidth - 340, y: 24 }} className="z-20 w-80">
+      <DraggablePanel initialPosition={{ x: typeof window !== 'undefined' ? window.innerWidth - 340 : 1000, y: 24 }} className="z-20 w-80">
         <aside className="bg-[#111827]/95 backdrop-blur-xl border border-white/10 rounded-3xl p-6 flex flex-col shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden max-h-[90vh]">
           <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-4 absolute top-0 left-0 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
             <div className="w-12 h-1 bg-white/20 rounded-full"></div>
@@ -517,7 +517,7 @@ export default function DashboardProjectPage() {
 
       {/* DRAGGABLE NEW SURVEY MODAL */}
       {isNewSurveyModalOpen && (
-        <DraggablePanel initialPosition={{ x: (window.innerWidth / 2) - 200, y: 100 }} className="z-50 w-full max-w-md">
+        <DraggablePanel initialPosition={{ x: typeof window !== 'undefined' ? (window.innerWidth / 2) - 200 : 400, y: 100 }} className="z-50 w-full max-w-md">
           <div className="bg-[#111827]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
             <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
               <div className="w-12 h-1 bg-white/20 rounded-full"></div>
@@ -624,7 +624,7 @@ export default function DashboardProjectPage() {
 
       {/* DRAGGABLE VIEW/EDIT SURVEY MODAL */}
       {viewedSurvey && (
-        <DraggablePanel initialPosition={{ x: (window.innerWidth / 2) - 200, y: 100 }} className="z-50 w-full max-w-md">
+        <DraggablePanel initialPosition={{ x: typeof window !== 'undefined' ? (window.innerWidth / 2) - 200 : 400, y: 100 }} className="z-50 w-full max-w-md">
           <div className="bg-[#111827]/95 backdrop-blur-2xl border border-indigo-500/30 rounded-2xl shadow-[0_0_50px_rgba(99,102,241,0.2)] overflow-hidden">
             <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
               <div className="w-12 h-1 bg-white/20 rounded-full"></div>

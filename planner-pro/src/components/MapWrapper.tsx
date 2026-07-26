@@ -5,7 +5,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents, LayersControl, useMap, P
 import L from "leaflet";
 import "leaflet-draw";
 import 'leaflet.heat';
-import { MapPin, Search, Navigation, Hexagon, Edit3, Trash2, MousePointer2 } from "lucide-react";
+import { MapPin, Search, Navigation, Hexagon, Edit3, Trash2, MousePointer2, Activity, Square, Circle, Undo2, Redo2 } from "lucide-react";
 import { renderToStaticMarkup } from "react-dom/server";
 import DraggablePanel from "@/components/DraggablePanel";
 
@@ -47,7 +47,7 @@ function ClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) =
   return null;
 }
 
-function LeafletLogic({ surveys, showHeatmap, setDrawRefs }: { surveys: any[], showHeatmap: boolean, setDrawRefs: (map: L.Map, drawnItems: L.FeatureGroup) => void }) {
+function LeafletLogic({ surveys, showHeatmap, setDrawRefs, handleLayerCreated, handleLayerDeleted }: { surveys: any[], showHeatmap: boolean, setDrawRefs: (map: L.Map, drawnItems: L.FeatureGroup) => void, handleLayerCreated: (l: any) => void, handleLayerDeleted: (l: any) => void }) {
   const map = useMap();
   const heatLayerRef = useRef<any>(null);
 
@@ -60,18 +60,32 @@ function LeafletLogic({ surveys, showHeatmap, setDrawRefs }: { surveys: any[], s
     // We still initialize the control so the handlers exist internally, but CSS hides the UI
     const drawControl = new L.Control.Draw({
       edit: { featureGroup: drawnItems },
-      draw: { polygon: true, marker: true, polyline: false, circle: false, circlemarker: false, rectangle: true }
+      draw: { polygon: true, marker: true, polyline: true, circle: true, circlemarker: false, rectangle: true }
     });
     map.addControl(drawControl);
-    map.on(L.Draw.Event.CREATED, (e: any) => drawnItems.addLayer(e.layer));
+    
+    const onCreate = (e: any) => {
+      drawnItems.addLayer(e.layer);
+      handleLayerCreated(e.layer);
+    };
+    
+    const onDelete = (e: any) => {
+      e.layers.eachLayer((layer: any) => {
+        handleLayerDeleted(layer);
+      });
+    };
+
+    map.on(L.Draw.Event.CREATED, onCreate);
+    map.on(L.Draw.Event.DELETED, onDelete);
 
     setDrawRefs(map, drawnItems);
 
     return () => {
       map.removeControl(drawControl);
-      map.off(L.Draw.Event.CREATED);
+      map.off(L.Draw.Event.CREATED, onCreate);
+      map.off(L.Draw.Event.DELETED, onDelete);
     };
-  }, [map, setDrawRefs]);
+  }, [map, setDrawRefs, handleLayerCreated, handleLayerDeleted]);
 
   // Initialize Heatmap
   useEffect(() => {
@@ -158,23 +172,70 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
   const internalMapRef = useRef<L.Map | null>(null);
   const drawnItemsRef = useRef<L.FeatureGroup | null>(null);
   const [activeTool, setActiveTool] = useState<string | null>(null);
+  
+  // Undo/Redo State
+  const undoStack = useRef<{type: 'add' | 'remove', layer: any}[]>([]);
+  const redoStack = useRef<{type: 'add' | 'remove', layer: any}[]>([]);
+  const [, forceRender] = useState({});
 
   const setDrawRefs = (map: L.Map, drawnItems: L.FeatureGroup) => {
     internalMapRef.current = map;
     drawnItemsRef.current = drawnItems;
   };
 
+  const handleLayerCreated = (layer: any) => {
+    undoStack.current.push({ type: 'add', layer });
+    redoStack.current = []; // Clear redo stack on new action
+    forceRender({});
+  };
+
+  const handleLayerDeleted = (layer: any) => {
+    undoStack.current.push({ type: 'remove', layer });
+    redoStack.current = [];
+    forceRender({});
+  };
+
+  const undo = () => {
+    if (undoStack.current.length === 0 || !drawnItemsRef.current) return;
+    const action = undoStack.current.pop()!;
+    redoStack.current.push(action);
+    if (action.type === 'add') {
+      drawnItemsRef.current.removeLayer(action.layer);
+    } else {
+      drawnItemsRef.current.addLayer(action.layer);
+    }
+    forceRender({});
+  };
+
+  const redo = () => {
+    if (redoStack.current.length === 0 || !drawnItemsRef.current) return;
+    const action = redoStack.current.pop()!;
+    undoStack.current.push(action);
+    if (action.type === 'add') {
+      drawnItemsRef.current.addLayer(action.layer);
+    } else {
+      drawnItemsRef.current.removeLayer(action.layer);
+    }
+    forceRender({});
+  };
+
   // The L.Draw instances are attached to the map via handler maps
-  const triggerDraw = (type: 'polygon' | 'marker') => {
+  const triggerDraw = (type: 'polygon' | 'marker' | 'polyline' | 'rectangle' | 'circle') => {
     if (!internalMapRef.current) return;
     setActiveTool(type);
     
-    // In Leaflet.draw, new instances are created or handlers are invoked.
-    if (type === 'polygon') {
-      new (L.Draw as any).Polygon(internalMapRef.current).enable();
-    } else if (type === 'marker') {
-      new (L.Draw as any).Marker(internalMapRef.current).enable();
-    }
+    // Disable any existing tool
+    Object.keys(internalMapRef.current as any).forEach(k => {
+      if (k.startsWith('handler') && (internalMapRef.current as any)[k].disable) {
+        (internalMapRef.current as any)[k].disable();
+      }
+    });
+
+    if (type === 'polygon') new (L.Draw as any).Polygon(internalMapRef.current).enable();
+    else if (type === 'marker') new (L.Draw as any).Marker(internalMapRef.current).enable();
+    else if (type === 'polyline') new (L.Draw as any).Polyline(internalMapRef.current).enable();
+    else if (type === 'rectangle') new (L.Draw as any).Rectangle(internalMapRef.current).enable();
+    else if (type === 'circle') new (L.Draw as any).Circle(internalMapRef.current).enable();
   };
 
   const triggerEdit = (type: 'edit' | 'remove') => {
@@ -190,13 +251,6 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
         featureGroup: drawnItemsRef.current,
       }).enable();
     }
-  };
-
-  const resetTool = () => {
-    setActiveTool(null);
-    // Note: Disabling tools programmatically can be tricky in L.Draw, 
-    // usually clicking on the map finishes the action. 
-    // For this UI, resetting state is visual.
   };
 
   // Reset active tool when map is clicked since L.Draw handles completion
@@ -226,36 +280,86 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
           >
             <MousePointer2 className="w-5 h-5" />
           </button>
+          
           <div className="w-full h-[1px] bg-white/10 my-1"></div>
-          <button 
-            onClick={() => triggerDraw('polygon')}
-            className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'polygon' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-            title="Draw Polygon"
-          >
-            <Hexagon className="w-5 h-5" />
-          </button>
-          <button 
-            onClick={() => triggerDraw('marker')}
-            className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'marker' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-            title="Add Map Pin"
-          >
-            <MapPin className="w-5 h-5" />
-          </button>
+          
+          <div className="grid grid-cols-2 gap-1">
+            <button 
+              onClick={() => triggerDraw('marker')}
+              className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'marker' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+              title="Add Map Pin"
+            >
+              <MapPin className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={() => triggerDraw('polygon')}
+              className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'polygon' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+              title="Draw Polygon"
+            >
+              <Hexagon className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={() => triggerDraw('polyline')}
+              className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'polyline' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+              title="Draw Polyline"
+            >
+              <Activity className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={() => triggerDraw('rectangle')}
+              className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'rectangle' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+              title="Draw Rectangle"
+            >
+              <Square className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={() => triggerDraw('circle')}
+              className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'circle' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+              title="Draw Circle"
+            >
+              <Circle className="w-5 h-5" />
+            </button>
+          </div>
+          
           <div className="w-full h-[1px] bg-white/10 my-1"></div>
-          <button 
-            onClick={() => triggerEdit('edit')}
-            className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'edit' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-            title="Edit Shapes"
-          >
-            <Edit3 className="w-5 h-5" />
-          </button>
-          <button 
-            onClick={() => triggerEdit('remove')}
-            className={`p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'remove' ? 'bg-red-600 text-white shadow-lg shadow-red-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-            title="Delete Shapes"
-          >
-            <Trash2 className="w-5 h-5" />
-          </button>
+          
+          <div className="flex gap-1">
+            <button 
+              onClick={undo}
+              disabled={undoStack.current.length === 0}
+              className={`flex-1 p-2 rounded-xl transition-colors flex items-center justify-center ${undoStack.current.length > 0 ? 'text-indigo-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 cursor-not-allowed'}`}
+              title="Undo"
+            >
+              <Undo2 className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={redo}
+              disabled={redoStack.current.length === 0}
+              className={`flex-1 p-2 rounded-xl transition-colors flex items-center justify-center ${redoStack.current.length > 0 ? 'text-indigo-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 cursor-not-allowed'}`}
+              title="Redo"
+            >
+              <Redo2 className="w-5 h-5" />
+            </button>
+          </div>
+          
+          <div className="w-full h-[1px] bg-white/10 my-1"></div>
+          
+          <div className="flex gap-1">
+            <button 
+              onClick={() => triggerEdit('edit')}
+              className={`flex-1 p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'edit' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+              title="Edit Shapes"
+            >
+              <Edit3 className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={() => triggerEdit('remove')}
+              className={`flex-1 p-3 rounded-xl transition-colors flex items-center justify-center ${activeTool === 'remove' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+              title="Delete Shapes"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </DraggablePanel>
 
@@ -287,7 +391,13 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
         </LayersControl>
 
         <ClickHandler onMapClick={onMapClick} />
-        <LeafletLogic surveys={surveys} showHeatmap={showHeatmap} setDrawRefs={setDrawRefs} />
+        <LeafletLogic 
+          surveys={surveys} 
+          showHeatmap={showHeatmap} 
+          setDrawRefs={setDrawRefs} 
+          handleLayerCreated={handleLayerCreated} 
+          handleLayerDeleted={handleLayerDeleted} 
+        />
         
         {/* Temporary click marker for new survey */}
         {activeClickLoc && (
