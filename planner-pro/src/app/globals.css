@@ -5,6 +5,16 @@
 @tailwind components;
 @tailwind utilities;
 
+.leaflet-draw-toolbar a {
+  background-image: url('https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/images/spritesheet.png');
+}
+.leaflet-draw-toolbar a.leaflet-draw-edit-edit {
+  background-image: url('https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/images/spritesheet.png');
+}
+.leaflet-retina .leaflet-draw-toolbar a {
+  background-image: url('https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/images/spritesheet-2x.png');
+}
+
 :root {
   /* Core Colors */
   --color-primary: #6366f1; /* Indigo 500 */
