@@ -26,6 +26,7 @@ export default function ProjectsPage() {
   const [newProjectName, setNewProjectName] = useState("");
   const [isJoining, setIsJoining] = useState(false);
   const [joinCode, setJoinCode] = useState("");
+  const [createError, setCreateError] = useState("");
 
   const getMillis = (field: any) => {
     if (!field) return 0;
@@ -97,12 +98,22 @@ export default function ProjectsPage() {
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreateError("");
+    
     if (!newProjectName.trim() || !user) return;
+    
+    const projName = newProjectName.trim();
+    
+    // Check for uniqueness
+    const isTaken = projects.some(p => p.name.toLowerCase() === projName.toLowerCase());
+    if (isTaken) {
+      setCreateError(`Somebody has already taken the title "${projName}". Please choose a unique name.`);
+      return;
+    }
     
     setIsCreating(true);
     try {
       const now = serverTimestamp();
-      const projName = newProjectName.trim();
       
       // Generate the REAL document reference synchronously!
       const newDocRef = doc(collection(db, "projects"));
@@ -220,10 +231,17 @@ export default function ProjectsPage() {
                   type="text"
                   placeholder="Enter project name..."
                   value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  className="bg-[#0b1121] border border-slate-700/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 mb-4 transition-colors"
+                  onChange={(e) => {
+                    setNewProjectName(e.target.value);
+                    if (createError) setCreateError("");
+                  }}
+                  className={`bg-[#0b1121] border ${createError ? 'border-red-500' : 'border-slate-700/50'} rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 mb-2 transition-colors`}
                   required
                 />
+                
+                {createError && (
+                  <p className="text-red-400 text-xs mb-4 font-medium">{createError}</p>
+                )}
                 
                 <button 
                   type="submit"
