@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 
 import { db } from "@/lib/firebase";
-import { collection as fsCollection, query as fsQuery, where as fsWhere, onSnapshot as fsOnSnapshot, addDoc as fsAddDoc, serverTimestamp as fsServerTimestamp } from "firebase/firestore";
+import { collection as fsCollection, query as fsQuery, where as fsWhere, onSnapshot as fsOnSnapshot, addDoc as fsAddDoc, serverTimestamp as fsServerTimestamp, or as fsOr } from "firebase/firestore";
 import { Loader2, FolderPlus, MapPin, ChevronRight, LogOut } from "lucide-react";
 
 export default function Projects() {
@@ -24,7 +24,7 @@ export default function Projects() {
 
   useEffect(() => {
     if (!user) return;
-    const q = fsQuery(fsCollection(db, "projects"), fsWhere("ownerId", "==", user.uid));
+    const q = fsQuery(fsCollection(db, "projects"), fsOr(fsWhere("ownerId", "==", user.uid), fsWhere("members", "array-contains", user.uid)));
     const unsubscribe = fsOnSnapshot(q, (snapshot) => {
       const projData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       projData.sort((a: any, b: any) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
@@ -42,6 +42,7 @@ export default function Projects() {
       const docRef = await fsAddDoc(fsCollection(db, "projects"), {
         name: newProjectName,
         ownerId: user.uid,
+        members: [user.uid],
         createdAt: fsServerTimestamp(),
         updatedAt: fsServerTimestamp()
       });

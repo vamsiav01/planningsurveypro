@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, orderBy } from "firebase/firestore";
+import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, orderBy, arrayUnion } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { 
   Loader2, Hexagon, LayoutDashboard, Trash2, User as UserIcon, LogOut, 
-  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft
+  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft, Link, Check
 } from "lucide-react";
 
 // Safe dynamic import for Leaflet map
@@ -53,6 +53,7 @@ export default function Dashboard({ params }: DashboardProps) {
   const [roadAccess, setRoadAccess] = useState("paved");
   const [occupants, setOccupants] = useState("");
   const [yearBuilt, setYearBuilt] = useState("");
+  const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const zoningCounts = surveys.reduce((acc, survey) => {
@@ -68,9 +69,22 @@ export default function Dashboard({ params }: DashboardProps) {
   // Fetch Project Name
   useEffect(() => {
     if (!user) return;
-    const unsub = onSnapshot(doc(db, "projects", projectId), (docSnap) => {
+    const unsub = onSnapshot(doc(db, "projects", projectId), async (docSnap) => {
       if (docSnap.exists()) {
-        setProject({ id: docSnap.id, ...docSnap.data() });
+        const data = docSnap.data();
+        setProject({ id: docSnap.id, ...data });
+
+        // Auto-join logic
+        const members = data.members || [];
+        if (!members.includes(user.uid)) {
+          try {
+            await updateDoc(doc(db, "projects", projectId), {
+              members: arrayUnion(user.uid)
+            });
+          } catch (err) {
+            console.error("Error joining project:", err);
+          }
+        }
       }
     });
     return () => unsub();
@@ -294,12 +308,25 @@ export default function Dashboard({ params }: DashboardProps) {
       
       {/* 1. Center Map Area & Floating Glassmorphism Modal */}
       <main className="flex-1 relative h-full">
-        <button 
-          onClick={() => router.push('/projects')}
-          className="absolute top-6 left-16 z-[1000] bg-slate-900/80 backdrop-blur-md border border-white/10 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-sm font-medium transition-all"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back to Projects
-        </button>
+        <div className="absolute top-6 left-16 z-[1000] flex gap-3">
+          <button 
+            onClick={() => router.push('/projects')}
+            className="bg-slate-900/80 backdrop-blur-md border border-white/10 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-sm font-medium transition-all"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to Projects
+          </button>
+          <button 
+            onClick={() => {
+              navigator.clipboard.writeText(window.location.href);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }}
+            className="bg-indigo-600/90 backdrop-blur-md border border-indigo-400/30 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-sm font-medium transition-all"
+          >
+            {copied ? <Check className="w-4 h-4" /> : <Link className="w-4 h-4" />}
+            {copied ? "Copied!" : "Copy Invite Link"}
+          </button>
+        </div>
         <MapWrapper 
           surveys={surveys} 
           onMapClick={handleMapClick}
