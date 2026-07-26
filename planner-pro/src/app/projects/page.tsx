@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot, doc, setDoc } from "firebase/firestore";
-import { Loader2, Plus, Folder, Map as MapIcon, LogOut, LayoutDashboard, Trash2, User as UserIcon, Hexagon, Link } from "lucide-react";
+import { collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot, doc, setDoc, getCountFromServer, updateDoc } from "firebase/firestore";
+import { Loader2, Plus, Folder, Map as MapIcon, LogOut, LayoutDashboard, Trash2, User as UserIcon, Hexagon, Link, MoreVertical, Edit2, FileText } from "lucide-react";
 
 interface Project {
   id: string;
@@ -14,6 +14,9 @@ interface Project {
   updatedAt?: any;
   userId: string;
   collaborators?: string[];
+  isDeleted?: boolean;
+  deletedAt?: any;
+  surveyCount?: number;
 }
 
 export default function ProjectsPage() {
@@ -28,6 +31,9 @@ export default function ProjectsPage() {
   const [joinCode, setJoinCode] = useState("");
   const [createError, setCreateError] = useState("");
   const [syncError, setSyncError] = useState("");
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editName, setEditName] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
 
   const getMillis = (field: any) => {
     if (!field) return 0;
@@ -58,14 +64,24 @@ export default function ProjectsPage() {
 
       const all = [...owned, ...shared];
       const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
+      const active = unique.filter(p => !p.isDeleted);
 
-      unique.sort((a, b) => {
+      const projectsWithCounts = await Promise.all(active.map(async (p) => {
+        try {
+          const snap = await getCountFromServer(collection(db, `projects/${p.id}/surveys`));
+          return { ...p, surveyCount: snap.data().count };
+        } catch {
+          return { ...p, surveyCount: 0 };
+        }
+      }));
+
+      projectsWithCounts.sort((a, b) => {
         const timeA = a.updatedAt ? getMillis(a.updatedAt) : getMillis(a.createdAt);
         const timeB = b.updatedAt ? getMillis(b.updatedAt) : getMillis(b.createdAt);
         return timeB - timeA;
       });
 
-      setProjects(unique);
+      setProjects(projectsWithCounts);
       setSyncError("");
     } catch (error: any) {
       console.error("Fetch Error:", error);
@@ -134,6 +150,61 @@ export default function ProjectsPage() {
     }
   };
 
+  const handleDeleteProject = async (e: React.MouseEvent, project: Project) => {
+    e.stopPropagation();
+    if (window.confirm(`Are you sure you want to move "${project.name}" to the Trash Bin?`)) {
+      try {
+        await updateDoc(doc(db, "projects", project.id), {
+          isDeleted: true,
+          deletedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        await fetchProjects();
+      } catch (error: any) {
+        console.error("Error deleting project:", error);
+        setSyncError("Failed to delete project: " + error.message);
+      }
+    }
+  };
+
+  const startEditing = (e: React.MouseEvent, project: Project) => {
+    e.stopPropagation();
+    setEditingProject(project);
+    setEditName(project.name);
+  };
+
+  const saveEdit = async () => {
+    if (!editingProject || !editName.trim()) return;
+    const newName = editName.trim();
+    if (newName === editingProject.name) {
+      setEditingProject(null);
+      return;
+    }
+
+    setIsEditing(true);
+    try {
+      const globalCheckQuery = query(collection(db, "projects"), where("name", "==", newName));
+      const globalCheckSnap = await getDocs(globalCheckQuery);
+      if (!globalCheckSnap.empty) {
+        alert(`Somebody has already taken the title "${newName}". Please choose a unique name.`);
+        setIsEditing(false);
+        return;
+      }
+
+      await updateDoc(doc(db, "projects", editingProject.id), {
+        name: newName,
+        updatedAt: serverTimestamp()
+      });
+      await fetchProjects();
+      setEditingProject(null);
+    } catch (error: any) {
+      console.error("Error renaming:", error);
+      alert("Failed to rename project.");
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
   const handleJoinProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!joinCode.trim() || !user) return;
@@ -170,7 +241,7 @@ export default function ProjectsPage() {
           <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-indigo-600/10 text-indigo-400 font-medium transition-colors">
             <LayoutDashboard className="w-5 h-5" /> Dashboard
           </button>
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 transition-colors">
+          <button onClick={() => router.push('/trash')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 transition-colors">
             <Trash2 className="w-5 h-5" /> Trash Bin
           </button>
           <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 transition-colors">
@@ -283,16 +354,32 @@ export default function ProjectsPage() {
                 className="bg-[#111827] border border-slate-800 rounded-2xl p-6 hover:border-indigo-500/50 hover:shadow-[0_0_30px_rgba(99,102,241,0.1)] transition-all flex flex-col items-start text-left group min-h-[220px] relative"
               >
                 {project.userId !== user?.uid && (
-                  <div className="absolute top-4 right-4 bg-purple-500/10 text-purple-400 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-purple-500/20">
+                  <div className="absolute top-4 right-[100px] bg-purple-500/10 text-purple-400 text-[10px] font-bold uppercase tracking-wider px-2 py-1.5 rounded-md border border-purple-500/20">
                     Shared
                   </div>
                 )}
-                <div className="flex justify-between items-start w-full mb-4">
+                <div className="absolute top-4 right-4 flex gap-2 z-10">
+                  {project.userId === user?.uid && (
+                    <>
+                      <button onClick={(e) => startEditing(e, project)} className="p-2 text-slate-400 hover:text-indigo-400 bg-[#0b1121] rounded-lg border border-slate-800 hover:border-indigo-500/50 transition-colors">
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button onClick={(e) => handleDeleteProject(e, project)} className="p-2 text-slate-400 hover:text-red-400 bg-[#0b1121] rounded-lg border border-slate-800 hover:border-red-500/50 transition-colors">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className="flex justify-between items-center w-full mb-4 mt-2">
                   <div className="w-12 h-12 bg-[#0b1121] border border-slate-800 rounded-xl flex items-center justify-center group-hover:scale-110 group-hover:border-indigo-500/30 transition-all">
                     <Folder className="w-6 h-6 text-indigo-400" />
                   </div>
+                  <div className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 ml-auto mr-[90px]">
+                    <FileText className="w-3.5 h-3.5" />
+                    {project.surveyCount || 0} forms
+                  </div>
                 </div>
-                <h3 className="font-semibold text-xl mb-2 text-white line-clamp-1 w-full">{project.name}</h3>
+                <h3 className="font-semibold text-xl mb-2 text-white line-clamp-1 w-full pr-8">{project.name}</h3>
                 <p className="text-sm text-slate-500 mt-auto flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                   {project.updatedAt || project.createdAt 
@@ -304,6 +391,30 @@ export default function ProjectsPage() {
           </div>
         </div>
       </main>
+
+      {/* EDIT MODAL */}
+      {editingProject && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#111827] border border-slate-700 p-6 rounded-2xl w-full max-w-sm animate-fade-in shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-4">Edit Project Name</h3>
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="w-full bg-[#0b1121] border border-slate-700/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 mb-6 text-white"
+              autoFocus
+            />
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setEditingProject(null)} className="px-4 py-2.5 text-sm font-medium text-slate-400 hover:text-white transition-colors">
+                Cancel
+              </button>
+              <button onClick={saveEdit} disabled={isEditing} className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-2">
+                {isEditing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
