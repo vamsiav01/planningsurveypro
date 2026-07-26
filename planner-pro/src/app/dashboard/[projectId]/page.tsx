@@ -46,8 +46,8 @@ interface FormField {
 const DEFAULT_SCHEMA: FormField[] = [
   { id: 'houseNo', label: 'House No. / Plot No.', type: 'shortText', options: [], required: false, visible: true },
   { id: 'buildingName', label: 'Building Name', type: 'shortText', options: [], required: false, visible: true },
-  { id: 'landUse', label: 'Land Use / Category', type: 'combobox', options: ['Residential', 'Commercial', 'Industrial', 'Mixed Use', 'Public/Semi-Public', 'Open Space'], required: true, visible: true, showInAnalytics: true },
-  { id: 'floors', label: 'Number of Floors', type: 'number', options: [], required: true, visible: true },
+  { id: 'landUse', label: 'Land Use / Category', type: 'multipleChoice', options: ['Residential', 'Commercial', 'Industrial', 'Mixed Use', 'Public/Semi-Public', 'Open Space'], required: true, visible: true, showInAnalytics: true },
+  { id: 'floors', label: 'Number of Floors', type: 'multipleChoice', options: ['G', 'G+1', 'G+2', 'G+3', 'G+4', 'G+5', 'G+6', 'G+7', 'G+8', 'G+9', 'G+10', 'G+15', 'G+20'], required: true, visible: true },
   { id: 'structureType', label: 'Structural Type', type: 'multipleChoice', options: ['RCC (Concrete)', 'Load Bearing', 'Temporary / Kutcha', 'Wooden / Heritage'], required: false, visible: true, showInAnalytics: true },
   { id: 'condition', label: 'Building Condition', type: 'multipleChoice', options: ['Good', 'Fair', 'Poor', 'Dilapidated / Ruins'], required: false, visible: true, showInAnalytics: true },
   { id: 'occupancy', label: 'Occupancy Status', type: 'multipleChoice', options: ['Fully Occupied', 'Partially Occupied', 'Vacant', 'Under Construction'], required: false, visible: true, showInAnalytics: true },
@@ -104,7 +104,20 @@ export default function DashboardProjectPage() {
         if (projectDoc.exists()) {
           const pData = projectDoc.data();
           setProject({ id: projectDoc.id, ...pData });
-          setFormSchema(Array.isArray(pData.formSchema) ? pData.formSchema : DEFAULT_SCHEMA);
+          let loadedSchema = Array.isArray(pData.formSchema) ? pData.formSchema : DEFAULT_SCHEMA;
+          
+          // Hotfix to instantly upgrade existing projects with the new Floor format and visible dropdowns
+          loadedSchema = loadedSchema.map((f: FormField) => {
+            if (f.id === 'floors' && f.type === 'number') {
+              return { ...f, type: 'multipleChoice', options: ['G', 'G+1', 'G+2', 'G+3', 'G+4', 'G+5', 'G+6', 'G+7', 'G+8', 'G+9', 'G+10'] };
+            }
+            if (f.id === 'landUse' && f.type === 'combobox') {
+              return { ...f, type: 'multipleChoice' };
+            }
+            return f;
+          });
+          
+          setFormSchema(loadedSchema);
           
           // Magic Link Joining Logic: Automatically add user to collaborators if they have the link
           if (pData.userId !== user.uid && user.email && !(pData.collaborators || []).includes(user.email)) {
@@ -517,13 +530,13 @@ export default function DashboardProjectPage() {
                             }}
                             className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
                           >
-                            <option value="shortText">Short Answer</option>
-                            <option value="longText">Paragraph / Long Text</option>
-                            <option value="number">Number</option>
-                            <option value="date">Date</option>
-                            <option value="checkbox">Checkbox (Yes/No)</option>
-                            <option value="multipleChoice">Multiple Choice</option>
-                            <option value="combobox">Combo Box (Dropdown + Manual)</option>
+                            <option value="shortText" className="bg-[#0b1121] text-white">Short Answer</option>
+                            <option value="longText" className="bg-[#0b1121] text-white">Paragraph / Long Text</option>
+                            <option value="number" className="bg-[#0b1121] text-white">Number</option>
+                            <option value="date" className="bg-[#0b1121] text-white">Date</option>
+                            <option value="checkbox" className="bg-[#0b1121] text-white">Checkbox (Yes/No)</option>
+                            <option value="multipleChoice" className="bg-[#0b1121] text-white">Multiple Choice / Dropdown</option>
+                            <option value="combobox" className="bg-[#0b1121] text-white">Combo Box (Typable List)</option>
                           </select>
                         </div>
                       </div>
@@ -833,8 +846,8 @@ export default function DashboardProjectPage() {
                           required={field.required}
                           className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                         >
-                          <option value="" disabled>Select option...</option>
-                          {(Array.isArray(field.options) ? field.options : []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          <option value="" disabled className="bg-[#0b1121] text-slate-400">Select option...</option>
+                          {(Array.isArray(field.options) ? field.options : []).map(opt => <option key={opt} value={opt} className="bg-[#0b1121] text-white">{opt}</option>)}
                         </select>
                       )}
                       
