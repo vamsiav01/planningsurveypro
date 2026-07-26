@@ -35,7 +35,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Safety timeout: forcefully clear loading if Firebase fails to initialize or network is dead
+    const safetyTimeout = setTimeout(() => {
+      setLoading(false);
+    }, 4000);
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      clearTimeout(safetyTimeout);
       setUser(firebaseUser);
       setLoading(false);
       
@@ -71,7 +77,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(safetyTimeout);
+      unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {
