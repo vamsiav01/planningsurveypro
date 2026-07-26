@@ -108,6 +108,77 @@ function LeafletLogic({ surveys, showHeatmap, setDrawRefs, handleLayerCreated, h
   return null;
 }
 
+function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?: (geom: any[], tags: any, lat: number, lng: number) => void }) {
+  const map = useMap();
+  const [buildings, setBuildings] = useState<any[]>([]);
+  const fetchTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  const fetchBuildingsInBounds = async () => {
+    if (map.getZoom() < 16) {
+      setBuildings([]);
+      return;
+    }
+    const bounds = map.getBounds();
+    const s = bounds.getSouth();
+    const w = bounds.getWest();
+    const n = bounds.getNorth();
+    const e = bounds.getEast();
+
+    if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
+    fetchTimeout.current = setTimeout(async () => {
+      try {
+        const query = `[out:json][timeout:25];(way["building"](${s},${w},${n},${e});relation["building"](${s},${w},${n},${e}););out body geom;`;
+        const res = await fetch("https://overpass-api.de/api/interpreter", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: `data=${encodeURIComponent(query)}`
+        });
+        const data = await res.json();
+        if (data && data.elements) {
+          const parsed = data.elements.filter((el: any) => el.geometry).map((el: any) => ({
+            id: el.id,
+            tags: el.tags || {},
+            geom: el.geometry.map((pt: any) => [pt.lat, pt.lon])
+          }));
+          setBuildings(parsed);
+        }
+      } catch (err) {
+        console.error("Overpass Auto Fetch Error", err);
+      }
+    }, 1000);
+  };
+
+  useMapEvents({
+    moveend: () => fetchBuildingsInBounds()
+  });
+  
+  useEffect(() => {
+    fetchBuildingsInBounds();
+  }, []);
+
+  return (
+    <>
+      {buildings.map((b) => (
+        <Polygon 
+          key={b.id} 
+          positions={b.geom} 
+          pathOptions={{ color: '#6366f1', weight: 1, fillColor: '#6366f1', fillOpacity: 0.1 }}
+          eventHandlers={{
+            click: (e) => {
+              // Prevent the map's default click handler
+              L.DomEvent.stopPropagation(e.originalEvent);
+              if (onAutoBuildingClick) {
+                const center = e.target.getBounds().getCenter();
+                onAutoBuildingClick(b.geom, b.tags, center.lat, center.lng);
+              }
+            }
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
 export function MapSearchAndGPS({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null> }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -228,13 +299,14 @@ interface MapWrapperProps {
   surveys: any[];
   onMapClick: (lat: number, lng: number) => void;
   onSurveyClick: (survey: any, index: string | number) => void;
+  onAutoBuildingClick?: (geom: any[], tags: any, lat: number, lng: number) => void;
   activeBuildingGeom?: any[]; // LatLng arrays for polygon highlight
   activeClickLoc?: {lat: number, lng: number}; // Temporary marker for new survey
   showHeatmap: boolean;
   showMarkers: boolean;
 }
 
-export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeBuildingGeom, activeClickLoc, showHeatmap, showMarkers }: MapWrapperProps) {
+export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onAutoBuildingClick, activeBuildingGeom, activeClickLoc, showHeatmap, showMarkers }: MapWrapperProps) {
   const mapRef = useRef<L.Map | null>(null);
   
   // Storing refs for programmatic drawing
@@ -476,6 +548,7 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
         </LayersControl>
 
         <ClickHandler onMapClick={onMapClick} />
+        <BuildingFootprintLayer onAutoBuildingClick={onAutoBuildingClick} />
         <LeafletLogic 
           surveys={surveys} 
           showHeatmap={showHeatmap} 

@@ -295,6 +295,48 @@ export default function DashboardProjectPage() {
     }
   };
 
+  const handleAutoBuildingClick = (geom: any[], tags: any, lat: number, lng: number) => {
+    setActiveClickLoc({ lat, lng });
+    setActiveBuildingGeom(geom);
+    setViewedSurvey(null);
+    setIsNewSurveyModalOpen(true);
+    setFetchingOsm(false);
+
+    // Clear dynamic form data, populate defaults
+    const initialData: Record<string, string> = {};
+    (formSchema || []).filter(f => f).forEach(field => {
+      if (field.type === 'multipleChoice' && (Array.isArray(field.options) ? field.options : []).length > 0) {
+        initialData[field.id] = (Array.isArray(field.options) ? field.options : [])[0];
+      } else {
+        initialData[field.id] = "";
+      }
+    });
+
+    let approxArea = 0;
+    if (geom && geom.length > 0) {
+      const lats = geom.map(p => p[0]);
+      const lons = geom.map(p => p[1]);
+      const h = (Math.max(...lats) - Math.min(...lats)) * 111320;
+      const w = (Math.max(...lons) - Math.min(...lons)) * 111320 * Math.cos(lat * Math.PI / 180);
+      approxArea = Math.round(w * h * 0.7);
+    }
+
+    setOsmData({
+      id: "Auto-Detected",
+      area: approxArea > 0 ? approxArea : "Unknown",
+      tags: tags
+    });
+
+    if (tags['addr:housenumber'] && formSchema.find(f => f.id === 'houseNo')) initialData['houseNo'] = tags['addr:housenumber'];
+    if (tags['name'] && formSchema.find(f => f.id === 'buildingName')) initialData['buildingName'] = tags['name'];
+    if (tags['building:levels'] && formSchema.find(f => f.id === 'floors')) {
+      const levels = parseInt(tags['building:levels']);
+      initialData['floors'] = !isNaN(levels) ? (levels > 1 ? `G+${levels - 1}` : 'G') : tags['building:levels'];
+    }
+
+    setFormData(initialData);
+  };
+
   const handleSurveyClick = (survey: any, index: string | number) => {
     setIsNewSurveyModalOpen(false);
     setActiveClickLoc(null);
@@ -380,6 +422,7 @@ export default function DashboardProjectPage() {
           surveys={surveys} 
           onMapClick={handleMapClick} 
           onSurveyClick={handleSurveyClick}
+          onAutoBuildingClick={handleAutoBuildingClick}
           activeBuildingGeom={activeBuildingGeom}
           activeClickLoc={activeClickLoc || undefined}
           showHeatmap={showHeatmap}
