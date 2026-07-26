@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Fragment } from "react";
 import { MapContainer, TileLayer, Marker, useMapEvents, LayersControl, useMap, Polygon, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import "leaflet-draw";
@@ -628,7 +628,7 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onAutoB
           else if (floors && floors.startsWith('G+') && floors !== 'G+1' && floors !== 'G+2') color = '#ef4444'; // Red
           
           return (
-            <React.Fragment key={survey.id}>
+            <Fragment key={survey.id}>
               {survey.geom && survey.geom.length > 0 && (
                 <Polygon positions={survey.geom} pathOptions={{ color: color, fillColor: color, fillOpacity: 0.6, weight: 2 }} />
               )}
