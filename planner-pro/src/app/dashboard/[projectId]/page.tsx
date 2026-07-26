@@ -470,9 +470,9 @@ export default function DashboardProjectPage() {
       {/* FORM BUILDER MODAL */}
       {isBuilderOpen && (
         <SafeErrorBoundary componentName="Form Builder Modal">
-          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="w-full max-w-2xl bg-black/20 backdrop-blur-3xl border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.1)] overflow-hidden pointer-events-auto flex flex-col max-h-[90vh]">
-             <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/10">
+          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-transparent backdrop-blur-sm p-4 pointer-events-none">
+            <div className="w-full max-w-2xl bg-transparent backdrop-blur-3xl border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.1)] overflow-hidden pointer-events-auto flex flex-col max-h-[90vh]">
+             <div className="p-6 border-b border-white/10 flex justify-between items-center bg-transparent">
                 <div>
                   <h2 className="text-xl font-bold text-white flex items-center gap-2">
                     <Settings2 className="w-5 h-5 text-indigo-400" /> Form Builder
@@ -718,7 +718,7 @@ export default function DashboardProjectPage() {
       {isNewSurveyModalOpen && (
         <SafeErrorBoundary componentName="New Survey Modal">
           <DraggablePanel initialPosition={{ x: 40, y: 100 }} className="z-50 w-full max-w-md">
-            <div className="bg-black/20 backdrop-blur-[50px] border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.05)] overflow-hidden">
+            <div className="bg-transparent backdrop-blur-[50px] border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.05)] overflow-hidden">
             <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
               <div className="w-12 h-1 bg-white/30 rounded-full"></div>
             </div>
@@ -870,7 +870,7 @@ export default function DashboardProjectPage() {
       {viewedSurvey && (
         <SafeErrorBoundary componentName="Edit Survey Modal">
           <DraggablePanel initialPosition={{ x: 40, y: 100 }} className="z-50 w-full max-w-md">
-            <div className="bg-black/20 backdrop-blur-[50px] border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.05)] overflow-hidden">
+            <div className="bg-transparent backdrop-blur-[50px] border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.05)] overflow-hidden">
               <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
                 <div className="w-12 h-1 bg-white/30 rounded-full"></div>
               </div>

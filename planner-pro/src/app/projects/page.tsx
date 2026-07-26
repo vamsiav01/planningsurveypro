@@ -27,6 +27,13 @@ export default function ProjectsPage() {
   const [isJoining, setIsJoining] = useState(false);
   const [joinCode, setJoinCode] = useState("");
 
+  const getMillis = (field: any) => {
+    if (!field) return 0;
+    if (typeof field.toMillis === 'function') return field.toMillis();
+    if (typeof field.seconds === 'number') return field.seconds * 1000;
+    return Date.now();
+  };
+
   useEffect(() => {
     if (!authLoading && !user) {
       router.push("/");
@@ -37,27 +44,32 @@ export default function ProjectsPage() {
     const fetchProjects = async () => {
       if (!user) return;
       try {
-        // Query 1: Projects I own
         const qOwned = query(collection(db, "projects"), where("userId", "==", user.uid));
-        // Query 2: Projects shared with me
-        const qShared = query(collection(db, "projects"), where("collaborators", "array-contains", user.email));
+        const ownedPromise = getDocs(qOwned);
         
-        const [snapOwned, snapShared] = await Promise.all([getDocs(qOwned), getDocs(qShared)]);
+        let sharedPromise = Promise.resolve({ docs: [] } as any);
+        if (user.email) {
+          const qShared = query(collection(db, "projects"), where("collaborators", "array-contains", user.email));
+          sharedPromise = getDocs(qShared);
+        }
+        
+        const [snapOwned, snapShared] = await Promise.all([ownedPromise, sharedPromise]);
         
         const fetchedMap = new Map<string, Project>();
+        snapOwned.forEach((doc: any) => fetchedMap.set(doc.id, { id: doc.id, ...doc.data() } as Project));
+        snapShared.forEach((doc: any) => fetchedMap.set(doc.id, { id: doc.id, ...doc.data() } as Project));
         
-        snapOwned.forEach((doc) => {
-          fetchedMap.set(doc.id, { id: doc.id, ...doc.data() } as Project);
-        });
-        
-        snapShared.forEach((doc) => {
-          fetchedMap.set(doc.id, { id: doc.id, ...doc.data() } as Project);
-        });
-        
+        const getMillis = (field: any) => {
+          if (!field) return 0;
+          if (typeof field.toMillis === 'function') return field.toMillis();
+          if (typeof field.seconds === 'number') return field.seconds * 1000;
+          return Date.now();
+        };
+
         const fetchedProjects = Array.from(fetchedMap.values());
         setProjects(fetchedProjects.sort((a, b) => {
-          const timeA = a.updatedAt ? a.updatedAt.toMillis() : (a.createdAt ? a.createdAt.toMillis() : 0);
-          const timeB = b.updatedAt ? b.updatedAt.toMillis() : (b.createdAt ? b.createdAt.toMillis() : 0);
+          const timeA = a.updatedAt ? getMillis(a.updatedAt) : getMillis(a.createdAt);
+          const timeB = b.updatedAt ? getMillis(b.updatedAt) : getMillis(b.createdAt);
           return timeB - timeA;
         }));
       } catch (error) {
@@ -78,14 +90,28 @@ export default function ProjectsPage() {
     
     setIsCreating(true);
     try {
+      const now = serverTimestamp();
       const docRef = await addDoc(collection(db, "projects"), {
         name: newProjectName.trim(),
         userId: user.uid,
         collaborators: [],
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        createdAt: now,
+        updatedAt: now,
       });
-      router.push(`/dashboard/${docRef.id}`);
+      
+      // Update local state to immediately show it on the home screen
+      const newProject: Project = {
+        id: docRef.id,
+        name: newProjectName.trim(),
+        userId: user.uid,
+        collaborators: [],
+        createdAt: { toMillis: () => Date.now() },
+        updatedAt: { toMillis: () => Date.now() },
+      };
+      
+      setProjects(prev => [newProject, ...prev]);
+      setNewProjectName("");
+      setIsCreating(false);
     } catch (error) {
       console.error("Error creating project:", error);
       setIsCreating(false);
@@ -183,7 +209,7 @@ export default function ProjectsPage() {
                   disabled={isCreating}
                   className="mt-auto bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors flex justify-center items-center shadow-lg shadow-indigo-600/20"
                 >
-                  {isCreating ? <Loader2 className="w-5 h-5 animate-spin" /> : "Create & Open Map"}
+                  {isCreating ? <Loader2 className="w-5 h-5 animate-spin" /> : "Create Project"}
                 </button>
               </form>
             </div>
@@ -238,7 +264,7 @@ export default function ProjectsPage() {
                 <p className="text-sm text-slate-500 mt-auto flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                   {project.updatedAt || project.createdAt 
-                    ? `Updated ${new Date((project.updatedAt || project.createdAt).toMillis()).toLocaleDateString()} at ${new Date((project.updatedAt || project.createdAt).toMillis()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` 
+                    ? `Updated ${new Date(getMillis(project.updatedAt || project.createdAt)).toLocaleDateString()} at ${new Date(getMillis(project.updatedAt || project.createdAt)).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` 
                     : 'Just now'}
                 </p>
               </button>
