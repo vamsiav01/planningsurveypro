@@ -9,6 +9,7 @@ import dynamic from "next/dynamic";
 import DraggablePanel from "@/components/DraggablePanel";
 import { SafeErrorBoundary } from "@/components/SafeErrorBoundary";
 import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical, CheckCircle2, Share2, Users, Copy, Link, Check, X } from "lucide-react";
+import * as xlsx from 'xlsx';
 
 const MapWrapper = dynamic(() => import("@/components/MapWrapper"), { 
   ssr: false,
@@ -153,31 +154,37 @@ export default function DashboardProjectPage() {
       alert("No data to export.");
       return;
     }
-    const headers = formSchema.map(f => f.label);
-    const csvRows = [];
-    csvRows.push(["Survey ID", "Latitude", "Longitude", ...headers, "Created At"].map(h => `"${String(h).replace(/"/g, '""')}"`).join(','));
-    
-    surveys.forEach(survey => {
-      const row = [
-        survey.id,
-        survey.location?.lat || "",
-        survey.location?.lng || "",
-        ...formSchema.map(f => {
-          const val = survey.answers?.[f.id] || survey[f.id] || "";
-          return `"${String(val).replace(/"/g, '""')}"`;
-        }),
-        survey.createdAt?.seconds ? new Date(survey.createdAt.seconds * 1000).toISOString() : ""
-      ];
-      csvRows.push(row.join(','));
+
+    const formattedData = surveys.map(survey => {
+      const row: any = {
+        "Survey ID": survey.id,
+        "Latitude": survey.location?.lat || "",
+        "Longitude": survey.location?.lng || ""
+      };
+      
+      formSchema.forEach(f => {
+        const val = survey.answers?.[f.id] || survey[f.id] || "";
+        row[f.label] = val;
+      });
+      
+      row["Created At"] = survey.createdAt?.seconds ? new Date(survey.createdAt.seconds * 1000).toLocaleString() : "";
+      return row;
     });
+
+    const ws = xlsx.utils.json_to_sheet(formattedData);
     
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${project?.name || 'Project'}_Data.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // Auto-size columns for neat formatting
+    if (formattedData.length > 0) {
+      const colWidths = Object.keys(formattedData[0]).map(key => ({ 
+        wch: Math.max(key.length + 2, 15) 
+      }));
+      ws['!cols'] = colWidths;
+    }
+    
+    const wb = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(wb, ws, "Surveys");
+    
+    xlsx.writeFile(wb, `${project?.name || 'Project'}_Data.xlsx`);
   };
 
   const saveFormSchema = async (newSchema: FormField[]) => {

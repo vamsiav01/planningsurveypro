@@ -255,31 +255,6 @@ export default function Home() {
           </button>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2.5rem' }}>
-          <a 
-            href="/PlanningSurveyPro.apk"
-            download="PlanningSurveyPro.apk"
-            style={{ 
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              backgroundColor: '#10b981', 
-              color: 'white', 
-              padding: '0.875rem 1.75rem', 
-              borderRadius: '9999px', 
-              fontSize: '1rem', 
-              fontWeight: 600, 
-              textDecoration: 'none',
-              boxShadow: '0 10px 25px -5px rgba(16, 185, 129, 0.4), 0 8px 10px -6px rgba(16, 185, 129, 0.1)',
-              transition: 'all 0.2s ease-in-out'
-            }}
-            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#059669'; e.currentTarget.style.transform = 'translateY(-2px)' }}
-            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#10b981'; e.currentTarget.style.transform = 'translateY(0)' }}
-          >
-            <Download size={20} />
-            Download Android APK
-          </a>
-        </div>
       </div>
     </div>
   );
