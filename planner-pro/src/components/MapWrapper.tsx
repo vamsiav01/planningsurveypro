@@ -145,17 +145,8 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
           relation["building"](${s},${w},${n},${e});
           way["building:part"](${s},${w},${n},${e});
           relation["building:part"](${s},${w},${n},${e});
-          way["amenity"="college"](${s},${w},${n},${e});
-          relation["amenity"="college"](${s},${w},${n},${e});
-          way["amenity"="university"](${s},${w},${n},${e});
-          relation["amenity"="university"](${s},${w},${n},${e});
-          way["amenity"="hospital"](${s},${w},${n},${e});
-          relation["amenity"="hospital"](${s},${w},${n},${e});
-          way["amenity"="school"](${s},${w},${n},${e});
-          relation["amenity"="school"](${s},${w},${n},${e});
-          way["historic"](${s},${w},${n},${e});
         );out body geom;`;
-        const res = await fetch("https://overpass-api.de/api/interpreter", {
+        const res = await fetch("https://lz4.overpass-api.de/api/interpreter", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: `data=${encodeURIComponent(query)}`
@@ -629,26 +620,38 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onAutoB
         )}
 
         {/* Render Saved Surveys */}
-        {showMarkers && surveys.map((survey, index) => (
-          survey.location && (
-            <Marker 
-              key={survey.id} 
-              position={[survey.location.lat, survey.location.lng]}
-              icon={createNumberedIcon(`S${(index as number) + 1}`)}
-              eventHandlers={{
-                click: () => {
-                  onSurveyClick(survey, `S${(index as number) + 1}`);
-                  if (mapRef.current && survey.location) {
-                    mapRef.current.flyTo([survey.location.lat, survey.location.lng], mapRef.current.getZoom(), { animate: true, duration: 0.5 });
-                    setTimeout(() => {
-                      mapRef.current?.panBy([-300, 0], { animate: true, duration: 0.3 });
-                    }, 550);
-                  }
-                }
-              }}
-            />
-          )
-        ))}
+        {showMarkers && surveys.map((survey, index) => {
+          let color = '#22c55e'; // Green for G
+          const floors = survey.answers?.floors || survey.data?.floors;
+          if (floors === 'G+1') color = '#eab308'; // Yellow
+          else if (floors === 'G+2') color = '#f97316'; // Orange
+          else if (floors && floors.startsWith('G+') && floors !== 'G+1' && floors !== 'G+2') color = '#ef4444'; // Red
+          
+          return (
+            <React.Fragment key={survey.id}>
+              {survey.geom && survey.geom.length > 0 && (
+                <Polygon positions={survey.geom} pathOptions={{ color: color, fillColor: color, fillOpacity: 0.6, weight: 2 }} />
+              )}
+              {survey.location && (
+                <Marker 
+                  position={[survey.location.lat, survey.location.lng]}
+                  icon={createNumberedIcon(`S${(index as number) + 1}`)}
+                  eventHandlers={{
+                    click: () => {
+                      onSurveyClick(survey, `S${(index as number) + 1}`);
+                      if (mapRef.current && survey.location) {
+                        mapRef.current.flyTo([survey.location.lat, survey.location.lng], mapRef.current.getZoom(), { animate: true, duration: 0.5 });
+                        setTimeout(() => {
+                          mapRef.current?.panBy([-300, 0], { animate: true, duration: 0.3 });
+                        }, 550);
+                      }
+                    }
+                  }}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
       </MapContainer>
     </div>
   );
