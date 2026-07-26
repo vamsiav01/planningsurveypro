@@ -163,26 +163,43 @@ function BoundingBoxFetcher({
           out skel qt;
         `;
         
-        const response = await fetch("https://overpass-api.de/api/interpreter", {
+        const overpassPromise = fetch("https://overpass-api.de/api/interpreter", {
           method: "POST",
           body: q
-        });
-        const data = await response.json();
+        }).then(res => res.json()).catch(err => { console.error("Overpass error", err); return null; });
+        
+        const esriUrl = `https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/MSBFP2/FeatureServer/0/query?f=json&geometry=${w},${s},${e},${n}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true`;
+        const esriPromise = fetch(esriUrl).then(res => res.json()).catch(err => { console.error("ESRI error", err); return null; });
+
+        const [overpassData, esriData] = await Promise.all([overpassPromise, esriPromise]);
         
         const newFootprints: any[] = [];
         
-        if (data.elements && data.elements.length > 0) {
-          const ways = data.elements.filter((e: any) => e.type === 'way' && e.tags && e.tags.building);
+        if (overpassData && overpassData.elements && overpassData.elements.length > 0) {
+          const ways = overpassData.elements.filter((e: any) => e.type === 'way' && e.tags && e.tags.building);
           ways.forEach((way: any) => {
             const coords: [number, number][] = [];
             way.nodes.forEach((nodeId: number) => {
-              const node = data.elements.find((e: any) => e.type === 'node' && e.id === nodeId);
+              const node = overpassData.elements.find((e: any) => e.type === 'node' && e.id === nodeId);
               if (node) {
                 coords.push([node.lat, node.lon]);
               }
             });
             if (coords.length > 0) {
-              newFootprints.push({ coords, tags: way.tags, id: way.id });
+              newFootprints.push({ coords, tags: way.tags, id: way.id, source: 'osm' });
+            }
+          });
+        }
+
+        if (esriData && esriData.features && esriData.features.length > 0) {
+          esriData.features.forEach((feature: any) => {
+            if (feature.geometry && feature.geometry.rings && feature.geometry.rings.length > 0) {
+              // ESRI returns [lng, lat], Leaflet wants [lat, lng]
+              const coords = feature.geometry.rings[0].map((pt: [number, number]) => [pt[1], pt[0]]);
+              if (coords.length > 0) {
+                const id = `esri-${feature.attributes?.OBJECTID || Math.random().toString()}`;
+                newFootprints.push({ coords, tags: { building: 'yes', source: 'Microsoft AI' }, id, source: 'esri' });
+              }
             }
           });
         }

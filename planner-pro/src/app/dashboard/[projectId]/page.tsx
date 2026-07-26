@@ -101,6 +101,27 @@ export default function Dashboard({ params }: DashboardProps) {
 
     if (preFetchedFootprint) {
       setActiveFootprint(preFetchedFootprint);
+      
+      // Auto-extract tags
+      if (preFetchedFootprint.tags) {
+        const t = preFetchedFootprint.tags;
+        
+        // Auto-fill House Name / Number
+        if (t.name) setHouseNo(t.name);
+        else if (t['addr:housenumber'] && t['addr:street']) setHouseNo(`${t['addr:housenumber']} ${t['addr:street']}`);
+        else if (t['addr:housenumber']) setHouseNo(t['addr:housenumber']);
+        
+        // Auto-fill Floors
+        if (t['building:levels']) setFloors(t['building:levels']);
+        
+        // Auto-fill Zoning
+        const bType = String(t.building || '').toLowerCase();
+        if (['residential', 'apartments', 'house', 'detached', 'terrace'].includes(bType)) setZoning('residential');
+        else if (['commercial', 'retail', 'office', 'supermarket'].includes(bType)) setZoning('commercial');
+        else if (['industrial', 'warehouse', 'factory'].includes(bType)) setZoning('industrial');
+        else if (['public', 'school', 'hospital', 'civic', 'government'].includes(bType)) setZoning('public');
+      }
+
       setLoadingFootprint(false);
       return;
     }
