@@ -59,7 +59,7 @@ const DEFAULT_SCHEMA: FormField[] = [
 
 export default function DashboardProjectPage() {
   const { projectId } = useParams();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
   const [project, setProject] = useState<any>(null);
@@ -95,6 +95,7 @@ export default function DashboardProjectPage() {
   const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) {
       router.push("/");
       return;
@@ -147,7 +148,7 @@ export default function DashboardProjectPage() {
       }
     };
     fetchProjectAndSurveys();
-  }, [projectId, user, router]);
+  }, [projectId, user, authLoading, router]);
 
   const handleExport = () => {
     if (!surveys || surveys.length === 0) {
@@ -403,7 +404,7 @@ export default function DashboardProjectPage() {
     }
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="min-h-screen bg-[#0b1121] flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
