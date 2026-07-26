@@ -311,86 +311,90 @@ export default function DashboardProjectPage() {
 
       {/* DRAGGABLE RIGHT SIDEBAR */}
       <DraggablePanel initialPosition={{ x: typeof window !== 'undefined' ? window.innerWidth - 340 : 1000, y: 24 }} className="z-20 w-80">
-        <aside className="bg-[#111827]/95 backdrop-blur-xl border border-white/10 rounded-3xl p-6 flex flex-col shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden max-h-[90vh]">
-          <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-4 absolute top-0 left-0 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+        <aside className="bg-[#111827]/95 backdrop-blur-xl border border-white/10 rounded-3xl flex flex-col shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden max-h-[90vh]">
+          {/* FIXED DRAG HANDLE */}
+          <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors shrink-0 z-10">
             <div className="w-12 h-1 bg-white/20 rounded-full"></div>
           </div>
           
-          <div className="flex items-start gap-3 mb-6 mt-4">
-            <div className="bg-indigo-600/20 text-indigo-400 p-2 rounded-xl mt-1">
-              <MapIcon className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-white truncate w-52">{project?.name || "Loading..."}</h2>
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium mt-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div> Cloud Synced
+          {/* SCROLLABLE CONTENT */}
+          <div className="p-6 pt-2 flex flex-col flex-1 overflow-y-auto custom-scrollbar">
+            <div className="flex items-start gap-3 mb-6">
+              <div className="bg-indigo-600/20 text-indigo-400 p-2 rounded-xl mt-1">
+                <MapIcon className="w-6 h-6" />
               </div>
-            </div>
-          </div>
-
-          <div className="space-y-3 mb-6">
-            <button className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-3 text-sm font-medium transition-colors shadow-lg shadow-indigo-600/20">
-              <Printer className="w-4 h-4" /> Print Map Layout
-            </button>
-            <button className="w-full flex items-center justify-center gap-2 bg-slate-800/80 hover:bg-slate-700 text-white border border-slate-700 rounded-xl py-3 text-sm font-medium transition-colors">
-              <Download className="w-4 h-4" /> Export Project Data
-            </button>
-          </div>
-
-          <div className="mb-6">
-            <h3 className="text-xs font-bold tracking-wider text-slate-500 mb-3 uppercase">Map Tools</h3>
-            <div className="space-y-1">
-              {[
-                { id: 'markers', label: 'Toggle Survey Pointers', icon: MapPin, state: showMarkers, setter: setShowMarkers },
-                { id: 'heat', label: 'Survey Heatmap', icon: Hexagon, state: showHeatmap, setter: setShowHeatmap },
-              ].map((tool) => (
-                <div key={tool.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-800/50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <tool.icon className="w-4 h-4 text-slate-400" />
-                    <span className="text-sm font-medium text-slate-300">{tool.label}</span>
-                  </div>
-                  <button 
-                    onClick={() => tool.setter(!tool.state)}
-                    className={`w-10 h-5 rounded-full relative transition-colors ${tool.state ? 'bg-indigo-600' : 'bg-slate-700'}`}
-                  >
-                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${tool.state ? 'translate-x-5' : ''}`}></div>
-                  </button>
+              <div>
+                <h2 className="text-xl font-bold text-white truncate w-52">{project?.name || "Loading..."}</h2>
+                <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium mt-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div> Cloud Synced
                 </div>
-              ))}
-            </div>
-            
-            <button onClick={() => setIsBuilderOpen(true)} className="w-full flex items-center justify-center gap-2 text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/10 rounded-xl py-2 mt-4 text-sm font-medium transition-colors">
-              <Settings2 className="w-4 h-4" /> Form Builder
-            </button>
-          </div>
-
-          <div className="mt-auto">
-            <h3 className="text-xs font-bold tracking-wider text-slate-500 mb-3 uppercase">Project Analytics</h3>
-            <div className="bg-[#0b1121]/50 border border-slate-800 rounded-2xl p-5 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl"></div>
-              <div className="flex items-center gap-2 text-indigo-400 font-medium mb-4 relative z-10">
-                <FileEdit className="w-5 h-5" /> Survey Analytics
               </div>
-              <div className="flex justify-between items-end relative z-10 mb-4 border-b border-white/10 pb-4">
-                <span className="text-slate-400 text-sm">Total Surveyed:</span>
-                <span className="text-2xl font-bold text-white">{surveys.length}</span>
+            </div>
+
+            <div className="space-y-3 mb-6 shrink-0">
+              <button className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-3 text-sm font-medium transition-colors shadow-lg shadow-indigo-600/20">
+                <Printer className="w-4 h-4" /> Print Map Layout
+              </button>
+              <button className="w-full flex items-center justify-center gap-2 bg-slate-800/80 hover:bg-slate-700 text-white border border-slate-700 rounded-xl py-3 text-sm font-medium transition-colors">
+                <Download className="w-4 h-4" /> Export Project Data
+              </button>
+            </div>
+
+            <div className="mb-6 shrink-0">
+              <h3 className="text-xs font-bold tracking-wider text-slate-500 mb-3 uppercase">Map Tools</h3>
+              <div className="space-y-1">
+                {[
+                  { id: 'markers', label: 'Toggle Survey Pointers', icon: MapPin, state: showMarkers, setter: setShowMarkers },
+                  { id: 'heat', label: 'Survey Heatmap', icon: Hexagon, state: showHeatmap, setter: setShowHeatmap },
+                ].map((tool) => (
+                  <div key={tool.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-800/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <tool.icon className="w-4 h-4 text-slate-400" />
+                      <span className="text-sm font-medium text-slate-300">{tool.label}</span>
+                    </div>
+                    <button 
+                      onClick={() => tool.setter(!tool.state)}
+                      className={`w-10 h-5 rounded-full relative transition-colors ${tool.state ? 'bg-indigo-600' : 'bg-slate-700'}`}
+                    >
+                      <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${tool.state ? 'translate-x-5' : ''}`}></div>
+                    </button>
+                  </div>
+                ))}
               </div>
               
-              {categoryField ? (
-                <div className="space-y-3 relative z-10 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">By {categoryField.label}</div>
-                  {Object.entries(dynamicCounts).sort((a, b) => b[1] - a[1]).map(([category, count]) => (
-                    <div key={category} className="flex justify-between items-center text-sm">
-                      <span className="flex items-center gap-2 text-slate-400 truncate pr-2 capitalize">
-                        {getCategoryIcon(category)} {category}
-                      </span>
-                      <span className="font-bold text-white">{count}</span>
-                    </div>
-                  ))}
+              <button onClick={() => setIsBuilderOpen(true)} className="w-full flex items-center justify-center gap-2 text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/10 rounded-xl py-2 mt-4 text-sm font-medium transition-colors">
+                <Settings2 className="w-4 h-4" /> Form Builder
+              </button>
+            </div>
+
+            <div className="mt-auto shrink-0">
+              <h3 className="text-xs font-bold tracking-wider text-slate-500 mb-3 uppercase">Project Analytics</h3>
+              <div className="bg-[#0b1121]/50 border border-slate-800 rounded-2xl p-5 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl"></div>
+                <div className="flex items-center gap-2 text-indigo-400 font-medium mb-4 relative z-10">
+                  <FileEdit className="w-5 h-5" /> Survey Analytics
                 </div>
-              ) : (
-                <div className="text-xs text-slate-500 italic relative z-10">Add a Multiple Choice or Combo Box question to see detailed analytics.</div>
-              )}
+                <div className="flex justify-between items-end relative z-10 mb-4 border-b border-white/10 pb-4">
+                  <span className="text-slate-400 text-sm">Total Surveyed:</span>
+                  <span className="text-2xl font-bold text-white">{surveys.length}</span>
+                </div>
+                
+                {categoryField ? (
+                  <div className="space-y-3 relative z-10 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">By {categoryField.label}</div>
+                    {Object.entries(dynamicCounts).sort((a, b) => b[1] - a[1]).map(([category, count]) => (
+                      <div key={category} className="flex justify-between items-center text-sm">
+                        <span className="flex items-center gap-2 text-slate-400 truncate pr-2 capitalize">
+                          {getCategoryIcon(category)} {category}
+                        </span>
+                        <span className="font-bold text-white">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500 italic relative z-10">Add a Multiple Choice or Combo Box question to see detailed analytics.</div>
+                )}
+              </div>
             </div>
           </div>
         </aside>
