@@ -111,6 +111,7 @@ function LeafletLogic({ surveys, showHeatmap, setDrawRefs, handleLayerCreated, h
 function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?: (geom: any[], tags: any, lat: number, lng: number) => void }) {
   const map = useMap();
   const [buildings, setBuildings] = useState<any[]>([]);
+  const [isFetching, setIsFetching] = useState(false);
   const fetchTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const fetchBuildingsInBounds = async () => {
@@ -125,9 +126,12 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
     const e = bounds.getEast();
 
     if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
+    
+    // Set loading after a small delay so it doesn't flicker on fast loads, or just set it immediately
     fetchTimeout.current = setTimeout(async () => {
+      setIsFetching(true);
       try {
-        const query = `[out:json][timeout:25];(way["building"](${s},${w},${n},${e});relation["building"](${s},${w},${n},${e}););out body geom;`;
+        const query = `[out:json][timeout:25];(way["building"](${s},${w},${n},${e});relation["building"](${s},${w},${n},${e});way["building:part"](${s},${w},${n},${e});relation["building:part"](${s},${w},${n},${e}););out body geom;`;
         const res = await fetch("https://overpass-api.de/api/interpreter", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -144,8 +148,10 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
         }
       } catch (err) {
         console.error("Overpass Auto Fetch Error", err);
+      } finally {
+        setIsFetching(false);
       }
-    }, 1000);
+    }, 800);
   };
 
   useMapEvents({
@@ -158,11 +164,18 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
 
   return (
     <>
+      {isFetching && (
+        <div className="leaflet-top leaflet-center pointer-events-none" style={{ position: 'absolute', top: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 1000 }}>
+          <div className="bg-[#111827]/90 backdrop-blur-md border border-indigo-500/30 text-indigo-400 px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 text-sm font-medium animate-in fade-in slide-in-from-top-4">
+            <Loader2 className="w-4 h-4 animate-spin" /> Scanning area for footprints...
+          </div>
+        </div>
+      )}
       {buildings.map((b) => (
         <Polygon 
           key={b.id} 
           positions={b.geom} 
-          pathOptions={{ color: '#6366f1', weight: 1, fillColor: '#6366f1', fillOpacity: 0.1 }}
+          pathOptions={{ color: '#6366f1', weight: 1.5, fillColor: '#6366f1', fillOpacity: 0.15 }}
           eventHandlers={{
             click: (e) => {
               // Prevent the map's default click handler
