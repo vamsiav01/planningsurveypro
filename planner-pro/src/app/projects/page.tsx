@@ -109,7 +109,7 @@ export default function Projects() {
             >
               <h3 className="text-lg font-medium text-white mb-2 group-hover:text-indigo-400 transition-colors">{project.name}</h3>
               <p className="text-sm text-slate-500 mb-6 flex items-center gap-2">
-                Last updated: {project.updatedAt?.toDate().toLocaleDateString() || 'Just now'}
+                Last updated: {project.updatedAt?.toDate()?.toLocaleDateString() || 'Just now'}
               </p>
               <div className="flex items-center justify-between text-sm text-indigo-500 font-medium">
                 Open Dashboard <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
