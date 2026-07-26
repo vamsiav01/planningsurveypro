@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot, doc, setDoc } from "firebase/firestore";
-import { Loader2, Plus, Folder, Map, LogOut, LayoutDashboard, Trash2, User as UserIcon, Hexagon, Link } from "lucide-react";
+import { Loader2, Plus, Folder, Map as MapIcon, LogOut, LayoutDashboard, Trash2, User as UserIcon, Hexagon, Link } from "lucide-react";
 
 interface Project {
   id: string;
