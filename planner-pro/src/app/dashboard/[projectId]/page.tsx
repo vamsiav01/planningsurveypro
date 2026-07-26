@@ -148,6 +148,38 @@ export default function DashboardProjectPage() {
     fetchProjectAndSurveys();
   }, [projectId, user, router]);
 
+  const handleExport = () => {
+    if (!surveys || surveys.length === 0) {
+      alert("No data to export.");
+      return;
+    }
+    const headers = formSchema.map(f => f.label);
+    const csvRows = [];
+    csvRows.push(["Survey ID", "Latitude", "Longitude", ...headers, "Created At"].map(h => `"${String(h).replace(/"/g, '""')}"`).join(','));
+    
+    surveys.forEach(survey => {
+      const row = [
+        survey.id,
+        survey.location?.lat || "",
+        survey.location?.lng || "",
+        ...formSchema.map(f => {
+          const val = survey.answers?.[f.id] || survey[f.id] || "";
+          return `"${String(val).replace(/"/g, '""')}"`;
+        }),
+        survey.createdAt?.seconds ? new Date(survey.createdAt.seconds * 1000).toISOString() : ""
+      ];
+      csvRows.push(row.join(','));
+    });
+    
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${project?.name || 'Project'}_Data.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const saveFormSchema = async (newSchema: FormField[]) => {
     setFormSchema(newSchema);
     try {
@@ -357,10 +389,10 @@ export default function DashboardProjectPage() {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="pointer-events-auto flex items-center gap-3 px-6 h-12 bg-[#111827]/90 backdrop-blur-md border border-white/10 rounded-xl shadow-xl">
-          <div className="bg-indigo-600 rounded-md p-1">
+          <div className="bg-indigo-600 rounded-lg p-1.5 shadow-lg shadow-indigo-600/30">
             <Hexagon className="w-5 h-5 text-white" />
           </div>
-          <h1 className="text-lg font-bold text-white tracking-tight">Planner Pro</h1>
+          <h1 className="text-lg font-bold text-white tracking-tight">Planning Survey Pro</h1>
         </div>
       </div>
 
@@ -390,7 +422,10 @@ export default function DashboardProjectPage() {
               <button className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-3 text-sm font-medium transition-colors shadow-lg shadow-indigo-600/20">
                 <Printer className="w-4 h-4" /> Print Map Layout
               </button>
-              <button className="w-full flex items-center justify-center gap-2 bg-slate-800/80 hover:bg-slate-700 text-white border border-slate-700 rounded-xl py-3 text-sm font-medium transition-colors">
+              <button 
+                onClick={handleExport}
+                className="w-full flex items-center justify-center gap-2 bg-slate-800/80 hover:bg-slate-700 text-white border border-slate-700 rounded-xl py-3 text-sm font-medium transition-colors"
+              >
                 <Download className="w-4 h-4" /> Export Project Data
               </button>
             </div>

@@ -135,7 +135,7 @@ export default function TrashPage() {
           <div className="bg-indigo-600 rounded-lg p-1">
             <Hexagon className="w-6 h-6 text-white" />
           </div>
-          <h1 className="text-xl font-bold text-white tracking-tight">Planner Pro</h1>
+          <h1 className="text-xl font-bold text-white tracking-tight">Planning Survey Pro</h1>
         </div>
         
         <nav className="flex-1 px-4 py-4 space-y-2">
