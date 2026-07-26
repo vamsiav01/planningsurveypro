@@ -4,6 +4,8 @@ import { useEffect, useState, useRef, Fragment } from "react";
 import { MapContainer, TileLayer, Marker, useMapEvents, LayersControl, Polygon, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet-draw/dist/leaflet.draw.css";
+import "leaflet-draw";
 import "leaflet-geosearch/dist/geosearch.css";
 import { GeoSearchControl, OpenStreetMapProvider } from "leaflet-geosearch";
 
@@ -18,8 +20,11 @@ L.Marker.prototype.options.icon = defaultIcon;
 
 interface MapWrapperProps {
   surveys: any[];
-  onMapClick: (lat: number, lng: number, overpassTags: any) => void;
+  onMapClick: (lat: number, lng: number, overpassTags?: any) => void;
+  onDrawCreate?: (layer: any) => void;
   activeClickLoc: { lat: number; lng: number } | null;
+  activeFootprint: {coords: [number, number][], tags: any, id?: string | number} | null;
+  loadingFootprint: boolean;
 }
 
 function SearchControl() {
@@ -44,86 +49,89 @@ function SearchControl() {
   return null;
 }
 
-function MapEvents({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
+function DrawControl({ onDrawCreate }: { onDrawCreate?: (layer: any) => void }) {
+  const map = useMap();
+  const drawnItemsRef = useRef(new L.FeatureGroup());
+
+  useEffect(() => {
+    const drawnItems = drawnItemsRef.current;
+    map.addLayer(drawnItems);
+
+    const drawControl = new L.Control.Draw({
+      position: 'topleft',
+      edit: {
+        featureGroup: drawnItems,
+        remove: true
+      },
+      draw: {
+        polyline: false,
+        circle: false,
+        circlemarker: false,
+        marker: {},
+        polygon: {
+          allowIntersection: false,
+          drawError: { color: '#e1e100', message: '<strong>Oh snap!<strong> you can\'t draw that!' },
+          shapeOptions: { color: '#3b82f6' }
+        },
+        rectangle: {
+          shapeOptions: { color: '#3b82f6' }
+        }
+      }
+    });
+    map.addControl(drawControl);
+
+    map.on(L.Draw.Event.CREATED, (e: any) => {
+      const layer = e.layer;
+      drawnItems.addLayer(layer);
+      if (onDrawCreate) {
+        onDrawCreate(layer);
+      }
+    });
+
+    return () => {
+      map.removeControl(drawControl);
+      map.removeLayer(drawnItems);
+    };
+  }, [map, onDrawCreate]);
+
+  return null;
+}
+
+function GeolocationEvents({ onMapClick }: { onMapClick: (lat: number, lng: number, overpassTags?: any) => void }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    // Request location on mount
+    map.locate({ setView: true, maxZoom: 16 });
+  }, [map]);
+
   useMapEvents({
     click(e) {
       onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+    locationfound(e) {
+      // Optional: draw a marker for user location
     }
   });
   return null;
 }
 
-export default function MapWrapper({ surveys, onMapClick, activeClickLoc }: MapWrapperProps) {
+export default function MapWrapper({ surveys, onMapClick, onDrawCreate, activeClickLoc, activeFootprint, loadingFootprint }: MapWrapperProps) {
   const [mounted, setMounted] = useState(false);
-  const [loadingFootprint, setLoadingFootprint] = useState(false);
-  const [activeFootprint, setActiveFootprint] = useState<{coords: [number, number][], tags: any} | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  const handleMapClick = async (lat: number, lng: number) => {
-    setLoadingFootprint(true);
-    setActiveFootprint(null);
-    try {
-      // Extremely precise Overpass query: look for building within 15 meters
-      const query = `
-        [out:json][timeout:10];
-        (
-          way["building"](around:15, ${lat}, ${lng});
-          relation["building"](around:15, ${lat}, ${lng});
-        );
-        out body;
-        >;
-        out skel qt;
-      `;
-      const response = await fetch("https://overpass-api.de/api/interpreter", {
-        method: "POST",
-        body: query
-      });
-      const data = await response.json();
-      
-      let foundBuilding = null;
-      let tags = {};
-      
-      if (data.elements && data.elements.length > 0) {
-        const ways = data.elements.filter((e: any) => e.type === 'way' && e.tags && e.tags.building);
-        if (ways.length > 0) {
-          const way = ways[0];
-          tags = way.tags;
-          const coords: [number, number][] = [];
-          
-          way.nodes.forEach((nodeId: number) => {
-            const node = data.elements.find((e: any) => e.type === 'node' && e.id === nodeId);
-            if (node) {
-              coords.push([node.lat, node.lon]);
-            }
-          });
-          
-          if (coords.length > 0) {
-            foundBuilding = { coords, tags };
-            setActiveFootprint(foundBuilding);
-          }
-        }
-      }
-      onMapClick(lat, lng, tags);
-    } catch (error) {
-      console.error("Overpass error:", error);
-      onMapClick(lat, lng, {});
-    } finally {
-      setLoadingFootprint(false);
-    }
-  };
 
   if (!mounted) return null;
 
   return (
     <div className="w-full h-full relative z-0 bg-[#0b1121]">
       <MapContainer
-        center={[20.5937, 78.9629]}
+        center={[20.5937, 78.9629]} // Default, will fly to GPS location if granted
         zoom={5}
         style={{ height: '100%', width: '100%', zIndex: 1 }}
-        zoomControl={false}
+        zoomControl={true}
       >
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="Satellite">
@@ -138,17 +146,18 @@ export default function MapWrapper({ surveys, onMapClick, activeClickLoc }: MapW
         </LayersControl>
 
         <SearchControl />
-        <MapEvents onMapClick={handleMapClick} />
+        <DrawControl onDrawCreate={onDrawCreate} />
+        <GeolocationEvents onMapClick={onMapClick} />
 
         {/* Existing Saved Surveys */}
         {surveys.map((survey) => {
           let fillColor = "#8b5cf6"; // Default purple
           if (survey.answers?.floors) {
             const floors = String(survey.answers.floors).toLowerCase();
-            if (floors === 'g') fillColor = "#22c55e"; // Green
-            else if (floors === 'g+1') fillColor = "#3b82f6"; // Blue
-            else if (floors === 'g+2') fillColor = "#eab308"; // Yellow
-            else if (floors === 'g+3') fillColor = "#f97316"; // Orange
+            if (floors === 'g' || floors === '1') fillColor = "#22c55e"; // Green
+            else if (floors === 'g+1' || floors === '2') fillColor = "#3b82f6"; // Blue
+            else if (floors === 'g+2' || floors === '3') fillColor = "#eab308"; // Yellow
+            else if (floors === 'g+3' || floors === '4') fillColor = "#f97316"; // Orange
             else fillColor = "#ef4444"; // Red for G+4 and above
           }
 
@@ -159,11 +168,11 @@ export default function MapWrapper({ surveys, onMapClick, activeClickLoc }: MapW
                   positions={survey.osmData.coords} 
                   pathOptions={{ color: fillColor, weight: 2, fillColor: fillColor, fillOpacity: 0.5 }}
                 >
-                  <Tooltip>{survey.answers?.buildingName || 'Surveyed Building'}</Tooltip>
+                  <Tooltip>{survey.answers?.houseNo || survey.answers?.buildingName || 'Surveyed Building'}</Tooltip>
                 </Polygon>
               ) : (
                 <Marker position={[survey.location.lat, survey.location.lng]}>
-                  <Tooltip>{survey.answers?.buildingName || 'Survey Point'}</Tooltip>
+                  <Tooltip>{survey.answers?.houseNo || survey.answers?.buildingName || 'Survey Point'}</Tooltip>
                 </Marker>
               )}
             </Fragment>
@@ -179,15 +188,15 @@ export default function MapWrapper({ surveys, onMapClick, activeClickLoc }: MapW
         {activeFootprint && (
           <Polygon 
             positions={activeFootprint.coords} 
-            pathOptions={{ color: "#a855f7", weight: 3, fillOpacity: 0.2, dashArray: "5, 5" }}
+            pathOptions={{ color: "#3b82f6", weight: 3, fillOpacity: 0.2 }}
           />
         )}
       </MapContainer>
       
       {loadingFootprint && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-indigo-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 animate-pulse">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-indigo-600/90 backdrop-blur-sm text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 animate-pulse border border-white/20">
           <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-          Detecting Footprint...
+          Detecting Building Boundary...
         </div>
       )}
     </div>
