@@ -216,8 +216,8 @@ function BoundingBoxFetcher({
             positions={footprint.coords}
             pathOptions={{ color: "#a855f7", weight: 2, fillColor: "#a855f7", fillOpacity: 0.2 }}
             eventHandlers={{
-              click: (e) => {
-                L.DomEvent.stopPropagation(e);
+              click: (e: any) => {
+                L.DomEvent.stopPropagation(e.originalEvent || e);
                 onMapClick(e.latlng.lat, e.latlng.lng, footprint);
               }
             }}
@@ -289,14 +289,14 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurvey
                 <Polygon 
                   positions={survey.osmData.coords} 
                   pathOptions={{ color: fillColor, weight: 2, fillColor: fillColor, fillOpacity: 0.5 }}
-                  eventHandlers={{ click: () => onSurveyClick && onSurveyClick(survey) }}
+                  eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onSurveyClick) onSurveyClick(survey); } }}
                 >
                   <Tooltip>{survey.answers?.houseNo || survey.answers?.buildingName || 'Surveyed Building'}</Tooltip>
                 </Polygon>
               ) : (
                 <Marker 
                   position={[survey.location.lat, survey.location.lng]}
-                  eventHandlers={{ click: () => onSurveyClick && onSurveyClick(survey) }}
+                  eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onSurveyClick) onSurveyClick(survey); } }}
                 >
                   <Tooltip>{survey.answers?.houseNo || survey.answers?.buildingName || 'Survey Point'}</Tooltip>
                 </Marker>
