@@ -10,6 +10,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Planning Survey Pro",
   description: "Geographic Survey App with real-time collaboration",
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({

@@ -4,21 +4,21 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { Loader2, LayoutDashboard, Trash2, User as UserIcon, Hexagon, LogOut, Mail, Clock, Key, Shield, CheckCircle2, Download, BookOpen, Save, RefreshCw, Database } from "lucide-react";
+import { usePWAInstall } from "@/hooks/usePWAInstall";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 
 export default function ProfilePage() {
   const { user, loading: authLoading, signOut } = useAuth();
   const router = useRouter();
+  const { handleInstallClick } = usePWAInstall();
   const [projects, setProjects] = useState<any[]>([]);
   const [profileData, setProfileData] = useState({
     fullName: "",
-    scholarNumber: "",
-    branch: "B. Planning",
-    program: "Bachelor",
-    section: "NA",
-    year: "3",
-    semester: "5"
+    organization: "",
+    role: "Surveyor",
+    region: "North Zone",
+    phone: ""
   });
   const [saving, setSaving] = useState(false);
 
@@ -126,13 +126,12 @@ export default function ProfilePage() {
           <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-indigo-500/10 text-indigo-400 font-medium transition-colors">
             <UserIcon className="w-5 h-5" /> Profile
           </button>
-          <a 
-            href="/PlanningSurveyPro.apk"
-            download="PlanningSurveyPro.apk"
+          <button 
+            onClick={handleInstallClick}
             className="w-full mt-4 flex items-center justify-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-xl py-3 px-4 text-sm font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:shadow-[0_0_25px_rgba(16,185,129,0.2)]"
           >
-            <Download className="w-4 h-4" /> Download APK
-          </a>
+            <Download className="w-4 h-4" /> Install App
+          </button>
         </nav>
 
         <div className="p-4 border-t border-slate-800/50">
@@ -171,13 +170,13 @@ export default function ProfilePage() {
             <h3 className="text-lg font-bold text-white tracking-widest uppercase z-10">
               {profileData.fullName || user?.email?.split('@')[0]}
             </h3>
-            {profileData.scholarNumber && (
-              <p className="text-slate-400 text-xs mt-1 z-10 font-mono">Scholar No: {profileData.scholarNumber}</p>
+            {profileData.organization && (
+              <p className="text-slate-400 text-xs mt-1 z-10 font-mono">{profileData.organization}</p>
             )}
             
             <div className="flex gap-2 mt-4 z-10 flex-wrap justify-center">
-              {profileData.program && <span className="bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">{profileData.program}</span>}
-              {profileData.branch && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">{profileData.branch}</span>}
+              {profileData.role && <span className="bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">{profileData.role}</span>}
+              {profileData.region && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">{profileData.region}</span>}
               <span className="bg-orange-500/20 text-orange-400 border border-orange-500/20 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                 Active
               </span>
@@ -228,89 +227,55 @@ export default function ProfilePage() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Scholar Number</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Agency / Organization</label>
                 <input 
                   type="text" 
-                  value={profileData.scholarNumber}
-                  onChange={(e) => setProfileData({...profileData, scholarNumber: e.target.value})}
+                  value={profileData.organization}
+                  onChange={(e) => setProfileData({...profileData, organization: e.target.value})}
                   className="w-full bg-[#090b14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                  placeholder="Enter scholar number"
+                  placeholder="Enter organization"
                 />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Branch</label>
-                <select 
-                  value={profileData.branch}
-                  onChange={(e) => setProfileData({...profileData, branch: e.target.value})}
-                  className="w-full bg-[#090b14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                >
-                  <option>B. Planning</option>
-                  <option>M. Planning</option>
-                  <option>Architecture</option>
-                  <option>Civil Engineering</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Program</label>
-                <select 
-                  value={profileData.program}
-                  onChange={(e) => setProfileData({...profileData, program: e.target.value})}
-                  className="w-full bg-[#090b14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                >
-                  <option>Bachelor</option>
-                  <option>Master</option>
-                  <option>PhD</option>
-                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Section</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Role</label>
                   <select 
-                    value={profileData.section}
-                    onChange={(e) => setProfileData({...profileData, section: e.target.value})}
+                    value={profileData.role}
+                    onChange={(e) => setProfileData({...profileData, role: e.target.value})}
                     className="w-full bg-[#090b14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                   >
-                    <option>NA</option>
-                    <option>A</option>
-                    <option>B</option>
-                    <option>C</option>
+                    <option>Surveyor</option>
+                    <option>Admin</option>
+                    <option>Manager</option>
+                    <option>Analyst</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Year</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Region / Zone</label>
                   <select 
-                    value={profileData.year}
-                    onChange={(e) => setProfileData({...profileData, year: e.target.value})}
+                    value={profileData.region}
+                    onChange={(e) => setProfileData({...profileData, region: e.target.value})}
                     className="w-full bg-[#090b14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                   >
-                    <option>1</option>
-                    <option>2</option>
-                    <option>3</option>
-                    <option>4</option>
-                    <option>5</option>
+                    <option>North Zone</option>
+                    <option>South Zone</option>
+                    <option>East Zone</option>
+                    <option>West Zone</option>
+                    <option>Central Zone</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Semester</label>
-                <select 
-                  value={profileData.semester}
-                  onChange={(e) => setProfileData({...profileData, semester: e.target.value})}
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Phone Number</label>
+                <input 
+                  type="text" 
+                  value={profileData.phone}
+                  onChange={(e) => setProfileData({...profileData, phone: e.target.value})}
                   className="w-full bg-[#090b14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                >
-                  <option>1</option>
-                  <option>2</option>
-                  <option>3</option>
-                  <option>4</option>
-                  <option>5</option>
-                  <option>6</option>
-                  <option>7</option>
-                  <option>8</option>
-                </select>
+                  placeholder="Enter phone number"
+                />
               </div>
               
               <button 

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { Loader2, Folder, LayoutDashboard, Trash2, User as UserIcon, Hexagon, LogOut, RefreshCw, AlertTriangle, Download } from "lucide-react";
+import { usePWAInstall } from "@/hooks/usePWAInstall";
 
 interface Project {
   id: string;
@@ -20,6 +21,7 @@ interface Project {
 export default function TrashPage() {
   const { user, loading: authLoading, signOut } = useAuth();
   const router = useRouter();
+  const { handleInstallClick } = usePWAInstall();
   
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -148,13 +150,12 @@ export default function TrashPage() {
           <button onClick={() => router.push('/profile')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 transition-colors">
             <UserIcon className="w-5 h-5" /> Profile
           </button>
-          <a 
-            href="/PlanningSurveyPro.apk"
-            download="PlanningSurveyPro.apk"
+          <button 
+            onClick={handleInstallClick}
             className="w-full mt-4 flex items-center justify-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-xl py-3 px-4 text-sm font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:shadow-[0_0_25px_rgba(16,185,129,0.2)]"
           >
-            <Download className="w-4 h-4" /> Download APK
-          </a>
+            <Download className="w-4 h-4" /> Install App
+          </button>
         </nav>
 
         <div className="p-4 border-t border-slate-800/50">
