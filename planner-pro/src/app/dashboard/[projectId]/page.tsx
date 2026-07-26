@@ -7,7 +7,8 @@ import { db } from "@/lib/firebase";
 import { doc, getDoc, collection, query, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc } from "firebase/firestore";
 import dynamic from "next/dynamic";
 import DraggablePanel from "@/components/DraggablePanel";
-import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical } from "lucide-react";
+import { SafeErrorBoundary } from "@/components/SafeErrorBoundary";
+import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical, CheckCircle2 } from "lucide-react";
 
 const MapWrapper = dynamic(() => import("@/components/MapWrapper"), { 
   ssr: false,
@@ -402,8 +403,9 @@ export default function DashboardProjectPage() {
 
       {/* FORM BUILDER MODAL */}
       {isBuilderOpen && (
-        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl bg-[#0f172a] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden pointer-events-auto flex flex-col max-h-[90vh]">
+        <SafeErrorBoundary componentName="Form Builder Modal">
+          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="w-full max-w-2xl bg-[#0f172a] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden pointer-events-auto flex flex-col max-h-[90vh]">
              <div className="p-6 border-b border-white/10 flex justify-between items-center bg-[#111827]">
                 <div>
                   <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -517,12 +519,14 @@ export default function DashboardProjectPage() {
              </div>
           </div>
         </div>
+        </SafeErrorBoundary>
       )}
 
       {/* DRAGGABLE NEW SURVEY MODAL */}
       {isNewSurveyModalOpen && (
-        <DraggablePanel initialPosition={{ x: typeof window !== 'undefined' ? (window.innerWidth / 2) - 200 : 400, y: 100 }} className="z-50 w-full max-w-md">
-          <div className="bg-[#111827]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
+        <SafeErrorBoundary componentName="New Survey Modal">
+          <DraggablePanel initialPosition={{ x: typeof window !== 'undefined' ? (window.innerWidth / 2) - 200 : 400, y: 100 }} className="z-50 w-full max-w-md">
+            <div className="bg-[#111827]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
             <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
               <div className="w-12 h-1 bg-white/20 rounded-full"></div>
             </div>
@@ -624,85 +628,88 @@ export default function DashboardProjectPage() {
             </div>
           </div>
         </DraggablePanel>
+        </SafeErrorBoundary>
       )}
 
       {/* DRAGGABLE VIEW/EDIT SURVEY MODAL */}
       {viewedSurvey && (
-        <DraggablePanel initialPosition={{ x: typeof window !== 'undefined' ? (window.innerWidth / 2) - 200 : 400, y: 100 }} className="z-50 w-full max-w-md">
-          <div className="bg-[#111827]/95 backdrop-blur-2xl border border-indigo-500/30 rounded-2xl shadow-[0_0_50px_rgba(99,102,241,0.2)] overflow-hidden">
-            <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
-              <div className="w-12 h-1 bg-white/20 rounded-full"></div>
-            </div>
-            <div className="p-6 pt-2 max-h-[85vh] overflow-y-auto custom-scrollbar">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold flex items-center gap-2 text-white">
-                  <span className="bg-indigo-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">{viewedSurvey.index}</span>
-                  Edit Survey Data
-                </h2>
-                <div className="flex gap-2">
-                  <button onClick={handleDeleteSurvey} title="Delete Survey" className="text-slate-400 hover:text-red-400 p-1 rounded-full hover:bg-red-400/10 transition-colors">
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                  <button onClick={() => setViewedSurvey(null)} className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors">
-                    ✕
-                  </button>
+        <SafeErrorBoundary componentName="Edit Survey Modal">
+          <DraggablePanel initialPosition={{ x: typeof window !== 'undefined' ? (window.innerWidth / 2) - 200 : 400, y: 100 }} className="z-50 w-full max-w-md">
+            <div className="bg-[#111827]/95 backdrop-blur-2xl border border-indigo-500/30 rounded-2xl shadow-[0_0_50px_rgba(99,102,241,0.2)] overflow-hidden">
+              <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+                <div className="w-12 h-1 bg-white/20 rounded-full"></div>
+              </div>
+              <div className="p-6 pt-2 max-h-[85vh] overflow-y-auto custom-scrollbar">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold flex items-center gap-2 text-white">
+                    <span className="bg-indigo-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">{viewedSurvey.index}</span>
+                    Edit Survey Data
+                  </h2>
+                  <div className="flex gap-2">
+                    <button onClick={handleDeleteSurvey} title="Delete Survey" className="text-slate-400 hover:text-red-400 p-1 rounded-full hover:bg-red-400/10 transition-colors">
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                    <button onClick={() => setViewedSurvey(null)} className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors">
+                      ✕
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div className="text-sm text-slate-400 mb-4 bg-black/20 p-3 rounded-lg border border-white/5">
-                Saved at Lat: {viewedSurvey.location?.lat.toFixed(5)}, Lng: {viewedSurvey.location?.lng.toFixed(5)}
-              </div>
+                <div className="text-sm text-slate-400 mb-4 bg-black/20 p-3 rounded-lg border border-white/5">
+                  Saved at Lat: {viewedSurvey.location?.lat.toFixed(5)}, Lng: {viewedSurvey.location?.lng.toFixed(5)}
+                </div>
 
-              <form onSubmit={handleUpdateSurvey} className="space-y-3">
-                {(formSchema || []).filter(f => f && f.visible).map(field => (
-                    <div key={field.id} className="w-full">
-                      <label className="block text-xs font-medium text-slate-400 mb-1">{field.label} {field.required && <span className="text-red-400">*</span>}</label>
-                      
-                      {field.type === 'shortText' && (
-                        <input 
-                          type="text" 
-                          value={formData[field.id] || ''} 
-                          onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
-                          required={field.required}
-                          className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
-                        />
-                      )}
-                      
-                      {field.type === 'multipleChoice' && (
-                        <select 
-                          value={formData[field.id] || ''} 
-                          onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
-                          required={field.required}
-                          className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-                        >
-                          <option value="" disabled>Select option...</option>
-                          {(Array.isArray(field.options) ? field.options : []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
-                      )}
-                      
-                      {field.type === 'combobox' && (
-                        <>
+                <form onSubmit={handleUpdateSurvey} className="space-y-3">
+                  {(formSchema || []).filter(f => f && f.visible).map(field => (
+                      <div key={field.id} className="w-full">
+                        <label className="block text-xs font-medium text-slate-400 mb-1">{field.label} {field.required && <span className="text-red-400">*</span>}</label>
+                        
+                        {field.type === 'shortText' && (
                           <input 
-                            list={`list_${field.id}`}
+                            type="text" 
                             value={formData[field.id] || ''} 
                             onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
                             required={field.required}
                             className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
                           />
-                          <datalist id={`list_${field.id}`}>
-                            {(Array.isArray(field.options) ? field.options : []).map(opt => <option key={opt} value={opt} />)}
-                          </datalist>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                <button type="submit" className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-4 py-2 mt-4 text-sm font-medium transition-colors">
-                  <Edit2 className="w-4 h-4" /> Save Changes
-                </button>
-              </form>
+                        )}
+                        
+                        {field.type === 'multipleChoice' && (
+                          <select 
+                            value={formData[field.id] || ''} 
+                            onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                            required={field.required}
+                            className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="" disabled>Select option...</option>
+                            {(Array.isArray(field.options) ? field.options : []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        )}
+                        
+                        {field.type === 'combobox' && (
+                          <>
+                            <input 
+                              list={`list_${field.id}`}
+                              value={formData[field.id] || ''} 
+                              onChange={(e) => setFormData({...formData, [field.id]: e.target.value})} 
+                              required={field.required}
+                              className="w-full bg-[#0b1121] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" 
+                            />
+                            <datalist id={`list_${field.id}`}>
+                              {(Array.isArray(field.options) ? field.options : []).map(opt => <option key={opt} value={opt} />)}
+                            </datalist>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  <button type="submit" className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-4 py-2 mt-4 text-sm font-medium transition-colors">
+                    <Edit2 className="w-4 h-4" /> Save Changes
+                  </button>
+                </form>
+              </div>
             </div>
-          </div>
-        </DraggablePanel>
+          </DraggablePanel>
+        </SafeErrorBoundary>
       )}
 
     </div>
