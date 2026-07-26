@@ -141,7 +141,7 @@ function BuildingFootprintLayer({ onAutoBuildingClick }: { onAutoBuildingClick?:
     fetchTimeout.current = setTimeout(async () => {
       setIsFetching(true);
       try {
-        const query = `[out:json][timeout:25];(way["building"](${s},${w},${n},${e});relation["building"](${s},${w},${n},${e});way["building:part"](${s},${w},${n},${e});relation["building:part"](${s},${w},${n},${e}););out body geom;`;
+        const query = `[out:json][timeout:25];(way["building"](${s},${w},${n},${e});relation["building"](${s},${w},${n},${e});way["building:part"](${s},${w},${n},${e});relation["building:part"](${s},${w},${n},${e});way["amenity"](${s},${w},${n},${e});relation["amenity"](${s},${w},${n},${e});way["man_made"](${s},${w},${n},${e});relation["man_made"](${s},${w},${n},${e});way["historic"](${s},${w},${n},${e}););out body geom;`;
         const res = await fetch("https://overpass-api.de/api/interpreter", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
