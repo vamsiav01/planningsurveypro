@@ -11,22 +11,12 @@ import { SafeErrorBoundary } from "@/components/SafeErrorBoundary";
 import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical, CheckCircle2, Share2, Users, Copy, Link, Check, X } from "lucide-react";
 import * as xlsx from 'xlsx';
 
-const MapWrapper = dynamic(() => import("@/components/MapWrapper"), { 
+const OvertureMap = dynamic(() => import("@/components/OvertureMap"), { 
   ssr: false,
   loading: () => (
     <div className="w-full h-full flex items-center justify-center bg-[#0b1121] text-slate-400">
       <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-      <span className="ml-3 font-medium">Loading Professional Maps...</span>
-    </div>
-  )
-});
-
-const MapboxWrapper = dynamic(() => import("@/components/MapboxWrapper"), { 
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-[#0b1121] text-slate-400">
-      <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-      <span className="ml-3 font-medium">Loading Mapbox AI Models...</span>
+      <span className="ml-3 font-medium">Connecting to Overture Maps Foundation...</span>
     </div>
   )
 });
@@ -104,11 +94,6 @@ export default function DashboardProjectPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [sharing, setSharing] = useState(false);
 
-  // Mapbox BYOK State
-  const [mapboxToken, setMapboxToken] = useState<string | null>(null);
-  const [isMapboxModalOpen, setIsMapboxModalOpen] = useState(false);
-  const [tempToken, setTempToken] = useState("");
-
   useEffect(() => {
     if (!user) {
       router.push("/");
@@ -116,11 +101,6 @@ export default function DashboardProjectPage() {
     }
     const fetchProjectAndSurveys = async () => {
       try {
-        const userDoc = await getDoc(doc(db, "users", user.uid));
-        if (userDoc.exists() && userDoc.data().mapboxToken) {
-          setMapboxToken(userDoc.data().mapboxToken);
-        }
-
         const projectDoc = await getDoc(doc(db, "projects", projectId as string));
         if (projectDoc.exists()) {
           const pData = projectDoc.data();
@@ -438,30 +418,16 @@ export default function DashboardProjectPage() {
       
       {/* ABSOLUTE FULL-SCREEN MAP */}
       <div className="absolute inset-0 z-0">
-        {mapboxToken ? (
-          <MapboxWrapper 
-            mapboxToken={mapboxToken}
-            surveys={surveys} 
-            onMapClick={handleMapClick} 
-            onSurveyClick={handleSurveyClick}
-            onAutoBuildingClick={handleAutoBuildingClick}
-            activeBuildingGeom={activeBuildingGeom}
-            activeClickLoc={activeClickLoc || undefined}
-            showHeatmap={showHeatmap}
-            showMarkers={showMarkers}
-          />
-        ) : (
-          <MapWrapper 
-            surveys={surveys} 
-            onMapClick={handleMapClick} 
-            onSurveyClick={handleSurveyClick}
-            onAutoBuildingClick={handleAutoBuildingClick}
-            activeBuildingGeom={activeBuildingGeom}
-            activeClickLoc={activeClickLoc || undefined}
-            showHeatmap={showHeatmap}
-            showMarkers={showMarkers}
-          />
-        )}
+        <OvertureMap 
+          surveys={surveys} 
+          onMapClick={handleMapClick} 
+          onSurveyClick={handleSurveyClick}
+          onAutoBuildingClick={handleAutoBuildingClick}
+          activeBuildingGeom={activeBuildingGeom}
+          activeClickLoc={activeClickLoc || undefined}
+          showHeatmap={showHeatmap}
+          showMarkers={showMarkers}
+        />
       </div>
 
       {/* FLOATING TOP-LEFT NAV */}
@@ -535,16 +501,6 @@ export default function DashboardProjectPage() {
                   </div>
                 ))}
               </div>
-              
-              {!mapboxToken && (
-                <button 
-                  onClick={() => setIsMapboxModalOpen(true)}
-                  className="w-full mt-3 flex items-center justify-center gap-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-xl py-2 text-xs font-bold transition-all"
-                >
-                  <MapIcon className="w-3.5 h-3.5" /> Upgrade to Mapbox (Pro Footprints)
-                </button>
-              )}
-              
               <div className="grid grid-cols-2 gap-2 mt-4">
                 <button onClick={() => setIsBuilderOpen(true)} className="flex items-center justify-center gap-2 text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/10 rounded-xl py-2 text-sm font-medium transition-colors">
                   <Settings2 className="w-4 h-4" /> Form Builder
@@ -1128,49 +1084,6 @@ export default function DashboardProjectPage() {
             </div>
           </DraggablePanel>
         </SafeErrorBoundary>
-      )}
-
-      {/* MAPBOX TOKEN MODAL */}
-      {isMapboxModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-[#121622] border border-white/10 p-8 rounded-3xl max-w-md w-full shadow-2xl relative overflow-hidden">
-            <h3 className="text-xl font-bold text-white mb-2">Upgrade to Pro Footprints</h3>
-            <p className="text-sm text-slate-400 mb-6">OpenStreetMap is missing some buildings. Connect a free Mapbox account to unlock AI-generated 3D footprints for almost every building on Earth.</p>
-            
-            <ol className="text-xs text-slate-300 list-decimal list-inside space-y-2 mb-6">
-              <li>Go to <a href="https://account.mapbox.com" target="_blank" className="text-indigo-400 underline">mapbox.com</a> and create a free account.</li>
-              <li>Copy your Default Public Token (starts with `pk.eyJ...`).</li>
-              <li>Paste it here. It will be saved securely to your profile.</li>
-            </ol>
-            
-            <input 
-              type="text" 
-              value={tempToken}
-              onChange={e => setTempToken(e.target.value)}
-              placeholder="pk.eyJ..."
-              className="w-full bg-[#0b1121] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors mb-6 font-mono text-sm"
-            />
-            
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setIsMapboxModalOpen(false)} className="px-5 py-2.5 rounded-xl text-slate-400 hover:text-white font-medium transition-colors text-sm">Cancel</button>
-              <button 
-                onClick={async () => {
-                  if(!tempToken || !user) return;
-                  try {
-                    await updateDoc(doc(db, "users", user.uid), { mapboxToken: tempToken });
-                  } catch (err) {
-                    await setDoc(doc(db, "users", user.uid), { mapboxToken: tempToken }, { merge: true });
-                  }
-                  setMapboxToken(tempToken);
-                  setIsMapboxModalOpen(false);
-                }}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors shadow-lg shadow-indigo-500/25 flex items-center gap-2"
-              >
-                Save Token & Upgrade
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
     </div>
