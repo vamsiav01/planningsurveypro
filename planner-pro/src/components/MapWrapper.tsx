@@ -134,6 +134,7 @@ function BoundingBoxFetcher({
 
   const [bgFootprints, setBgFootprints] = useState<any[]>([]);
   const fetchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const fetchIdRef = useRef(0);
 
   const fetchBuildingsInBounds = async () => {
     if (map.getZoom() < 16) {
@@ -144,57 +145,64 @@ function BoundingBoxFetcher({
     if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
     
     // Debounce to prevent spamming API while panning quickly
-    fetchTimeout.current = setTimeout(async () => {
-      try {
-        const bounds = map.getBounds();
-        const s = bounds.getSouth();
-        const w = bounds.getWest();
-        const n = bounds.getNorth();
-        const e = bounds.getEast();
+    fetchTimeout.current = setTimeout(() => {
+      const currentFetchId = ++fetchIdRef.current;
+      setBgFootprints([]);
 
-        const q = `
-          [out:json][timeout:25];
-          (
-            way["building"](${s},${w},${n},${e});
-            relation["building"](${s},${w},${n},${e});
-          );
-          out body;
-          >;
-          out skel qt;
-        `;
-        
-        const overpassPromise = fetch("https://overpass-api.de/api/interpreter", {
-          method: "POST",
-          body: q
-        }).then(res => res.json()).catch(err => { console.error("Overpass error", err); return null; });
-        
-        const esriUrl = `https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/MSBFP2/FeatureServer/0/query?f=json&geometry=${w},${s},${e},${n}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true`;
-        const esriPromise = fetch(esriUrl).then(res => res.json()).catch(err => { console.error("ESRI error", err); return null; });
+      const bounds = map.getBounds();
+      const s = bounds.getSouth();
+      const w = bounds.getWest();
+      const n = bounds.getNorth();
+      const e = bounds.getEast();
 
-        const [overpassData, esriData] = await Promise.all([overpassPromise, esriPromise]);
-        
+      const q = `
+        [out:json][timeout:25];
+        (
+          way["building"](${s},${w},${n},${e});
+          relation["building"](${s},${w},${n},${e});
+        );
+        out body;
+        >;
+        out skel qt;
+      `;
+      
+      // 1. Fetch Overpass (OSM)
+      fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        body: q
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (fetchIdRef.current !== currentFetchId) return;
         const newFootprints: any[] = [];
-        
-        if (overpassData && overpassData.elements && overpassData.elements.length > 0) {
-          const ways = overpassData.elements.filter((e: any) => e.type === 'way' && e.tags && e.tags.building);
+        if (data.elements && data.elements.length > 0) {
+          const ways = data.elements.filter((e: any) => e.type === 'way' && e.tags && e.tags.building);
           ways.forEach((way: any) => {
             const coords: [number, number][] = [];
             way.nodes.forEach((nodeId: number) => {
-              const node = overpassData.elements.find((e: any) => e.type === 'node' && e.id === nodeId);
-              if (node) {
-                coords.push([node.lat, node.lon]);
-              }
+              const node = data.elements.find((e: any) => e.type === 'node' && e.id === nodeId);
+              if (node) coords.push([node.lat, node.lon]);
             });
             if (coords.length > 0) {
               newFootprints.push({ coords, tags: way.tags, id: way.id, source: 'osm' });
             }
           });
         }
+        setBgFootprints(prev => [...prev, ...newFootprints]);
+      })
+      .catch(err => console.error("Overpass API error:", err));
 
+      // 2. Fetch ESRI (Microsoft AI Footprints)
+      const esriUrl = `https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/MSBFP2/FeatureServer/0/query?f=json&geometry=${w},${s},${e},${n}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true`;
+      
+      fetch(esriUrl)
+      .then(res => res.json())
+      .then(esriData => {
+        if (fetchIdRef.current !== currentFetchId) return;
+        const newFootprints: any[] = [];
         if (esriData && esriData.features && esriData.features.length > 0) {
           esriData.features.forEach((feature: any) => {
             if (feature.geometry && feature.geometry.rings && feature.geometry.rings.length > 0) {
-              // ESRI returns [lng, lat], Leaflet wants [lat, lng]
               const coords = feature.geometry.rings[0].map((pt: [number, number]) => [pt[1], pt[0]]);
               if (coords.length > 0) {
                 const id = `esri-${feature.attributes?.OBJECTID || Math.random().toString()}`;
@@ -203,11 +211,10 @@ function BoundingBoxFetcher({
             }
           });
         }
-        
-        setBgFootprints(newFootprints);
-      } catch (error) {
-        console.error("Bounding box Overpass error:", error);
-      }
+        setBgFootprints(prev => [...prev, ...newFootprints]);
+      })
+      .catch(err => console.error("ESRI Footprints API error:", err));
+
     }, 500);
   };
 
