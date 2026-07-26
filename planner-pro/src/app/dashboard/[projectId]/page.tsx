@@ -80,7 +80,7 @@ export default function Dashboard({ params }: DashboardProps) {
     return () => unsubscribe();
   }, [projectId, user]);
 
-  const handleMapClick = async (lat: number, lng: number) => {
+  const handleMapClick = async (lat: number, lng: number, preFetchedFootprint?: any) => {
     // Reset edit mode when clicking a new spot
     setSelectedSurveyId(null);
     setHouseNo("");
@@ -92,6 +92,13 @@ export default function Dashboard({ params }: DashboardProps) {
     setYearBuilt("");
 
     setActiveClickLoc({ lat, lng });
+
+    if (preFetchedFootprint) {
+      setActiveFootprint(preFetchedFootprint);
+      setLoadingFootprint(false);
+      return;
+    }
+
     setLoadingFootprint(true);
     setActiveFootprint(null);
     

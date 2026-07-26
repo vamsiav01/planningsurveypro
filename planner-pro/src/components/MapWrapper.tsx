@@ -20,7 +20,7 @@ L.Marker.prototype.options.icon = defaultIcon;
 
 interface MapWrapperProps {
   surveys: any[];
-  onMapClick: (lat: number, lng: number, overpassTags?: any) => void;
+  onMapClick: (lat: number, lng: number, preFetchedFootprint?: any) => void;
   onDrawCreate?: (layer: any) => void;
   onSurveyClick?: (survey: any) => void;
   activeClickLoc: { lat: number; lng: number } | null;
@@ -98,7 +98,7 @@ function DrawControl({ onDrawCreate }: { onDrawCreate?: (layer: any) => void }) 
   return null;
 }
 
-function GeolocationEvents({ onMapClick }: { onMapClick: (lat: number, lng: number, overpassTags?: any) => void }) {
+function GeolocationEvents({ onMapClick }: { onMapClick: (lat: number, lng: number, preFetchedFootprint?: any) => void }) {
   const map = useMap();
   
   useEffect(() => {
@@ -116,6 +116,120 @@ function GeolocationEvents({ onMapClick }: { onMapClick: (lat: number, lng: numb
   });
   return null;
 }
+
+function BoundingBoxFetcher({ 
+  onMapClick, 
+  activeFootprintId,
+  surveys
+}: { 
+  onMapClick: (lat: number, lng: number, preFetchedFootprint?: any) => void;
+  activeFootprintId?: string | number;
+  surveys: any[];
+}) {
+  const map = useMapEvents({
+    moveend() {
+      fetchBuildingsInBounds();
+    }
+  });
+
+  const [bgFootprints, setBgFootprints] = useState<any[]>([]);
+  const fetchTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  const fetchBuildingsInBounds = async () => {
+    if (map.getZoom() < 16) {
+      setBgFootprints([]); // Clear when zoomed out
+      return; 
+    }
+
+    if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
+    
+    // Debounce to prevent spamming API while panning quickly
+    fetchTimeout.current = setTimeout(async () => {
+      try {
+        const bounds = map.getBounds();
+        const s = bounds.getSouth();
+        const w = bounds.getWest();
+        const n = bounds.getNorth();
+        const e = bounds.getEast();
+
+        const q = `
+          [out:json][timeout:25];
+          (
+            way["building"](${s},${w},${n},${e});
+            relation["building"](${s},${w},${n},${e});
+          );
+          out body;
+          >;
+          out skel qt;
+        `;
+        
+        const response = await fetch("https://overpass-api.de/api/interpreter", {
+          method: "POST",
+          body: q
+        });
+        const data = await response.json();
+        
+        const newFootprints: any[] = [];
+        
+        if (data.elements && data.elements.length > 0) {
+          const ways = data.elements.filter((e: any) => e.type === 'way' && e.tags && e.tags.building);
+          ways.forEach((way: any) => {
+            const coords: [number, number][] = [];
+            way.nodes.forEach((nodeId: number) => {
+              const node = data.elements.find((e: any) => e.type === 'node' && e.id === nodeId);
+              if (node) {
+                coords.push([node.lat, node.lon]);
+              }
+            });
+            if (coords.length > 0) {
+              newFootprints.push({ coords, tags: way.tags, id: way.id });
+            }
+          });
+        }
+        
+        setBgFootprints(newFootprints);
+      } catch (error) {
+        console.error("Bounding box Overpass error:", error);
+      }
+    }, 500);
+  };
+
+  // Initial fetch on mount if zoom is sufficient
+  useEffect(() => {
+    fetchBuildingsInBounds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <>
+      {bgFootprints.map((footprint) => {
+        // Hide if it's the actively selected building (blue)
+        if (activeFootprintId && activeFootprintId === footprint.id) return null;
+        
+        // Hide if it's already a saved survey (prevent overlapping colors)
+        const isSaved = surveys.some(s => s.osmData?.id === footprint.id);
+        if (isSaved) return null;
+
+        return (
+          <Polygon
+            key={footprint.id}
+            positions={footprint.coords}
+            pathOptions={{ color: "#a855f7", weight: 2, fillColor: "#a855f7", fillOpacity: 0.2 }}
+            eventHandlers={{
+              click: (e) => {
+                L.DomEvent.stopPropagation(e);
+                onMapClick(e.latlng.lat, e.latlng.lng, footprint);
+              }
+            }}
+          >
+            <Tooltip>Unsurveyed Building</Tooltip>
+          </Polygon>
+        );
+      })}
+    </>
+  );
+}
+
 
 export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurveyClick, activeClickLoc, activeFootprint, loadingFootprint }: MapWrapperProps) {
   const [mounted, setMounted] = useState(false);
@@ -149,6 +263,13 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurvey
         <SearchControl />
         <DrawControl onDrawCreate={onDrawCreate} />
         <GeolocationEvents onMapClick={onMapClick} />
+        
+        {/* Dynamic Bounding Box Building Fetcher */}
+        <BoundingBoxFetcher 
+          onMapClick={onMapClick} 
+          activeFootprintId={activeFootprint?.id}
+          surveys={surveys}
+        />
 
         {/* Existing Saved Surveys */}
         {surveys.map((survey) => {
