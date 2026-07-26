@@ -245,7 +245,8 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
   // Undo/Redo State
   const undoStack = useRef<{type: 'add' | 'remove', layer: any}[]>([]);
   const redoStack = useRef<{type: 'add' | 'remove', layer: any}[]>([]);
-  const [, forceRender] = useState({});
+  const [undoLength, setUndoLength] = useState(0);
+  const [redoLength, setRedoLength] = useState(0);
 
   const setDrawRefs = (map: L.Map, drawnItems: L.FeatureGroup) => {
     internalMapRef.current = map;
@@ -255,13 +256,15 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
   const handleLayerCreated = (layer: any) => {
     undoStack.current.push({ type: 'add', layer });
     redoStack.current = []; // Clear redo stack on new action
-    forceRender({});
+    setUndoLength(undoStack.current.length);
+    setRedoLength(redoStack.current.length);
   };
 
   const handleLayerDeleted = (layer: any) => {
     undoStack.current.push({ type: 'remove', layer });
     redoStack.current = [];
-    forceRender({});
+    setUndoLength(undoStack.current.length);
+    setRedoLength(redoStack.current.length);
   };
 
   const undo = () => {
@@ -273,7 +276,8 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
     } else {
       drawnItemsRef.current.addLayer(action.layer);
     }
-    forceRender({});
+    setUndoLength(undoStack.current.length);
+    setRedoLength(redoStack.current.length);
   };
 
   const redo = () => {
@@ -285,7 +289,8 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
     } else {
       drawnItemsRef.current.removeLayer(action.layer);
     }
-    forceRender({});
+    setUndoLength(undoStack.current.length);
+    setRedoLength(redoStack.current.length);
   };
 
   // The L.Draw instances are attached to the map via handler maps
@@ -395,16 +400,16 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, activeB
           <div className="flex gap-1">
             <button 
               onClick={undo}
-              disabled={undoStack.current.length === 0}
-              className={`flex-1 p-2 rounded-xl transition-colors flex items-center justify-center ${undoStack.current.length > 0 ? 'text-indigo-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 cursor-not-allowed'}`}
+              disabled={undoLength === 0}
+              className={`flex-1 p-2 rounded-xl transition-colors flex items-center justify-center ${undoLength > 0 ? 'text-indigo-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 cursor-not-allowed'}`}
               title="Undo"
             >
               <Undo2 className="w-5 h-5" />
             </button>
             <button 
               onClick={redo}
-              disabled={redoStack.current.length === 0}
-              className={`flex-1 p-2 rounded-xl transition-colors flex items-center justify-center ${redoStack.current.length > 0 ? 'text-indigo-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 cursor-not-allowed'}`}
+              disabled={redoLength === 0}
+              className={`flex-1 p-2 rounded-xl transition-colors flex items-center justify-center ${redoLength > 0 ? 'text-indigo-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 cursor-not-allowed'}`}
               title="Redo"
             >
               <Redo2 className="w-5 h-5" />

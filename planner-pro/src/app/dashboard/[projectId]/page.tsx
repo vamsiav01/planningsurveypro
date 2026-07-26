@@ -8,7 +8,7 @@ import { doc, getDoc, collection, query, onSnapshot, addDoc, serverTimestamp, de
 import dynamic from "next/dynamic";
 import DraggablePanel from "@/components/DraggablePanel";
 import { SafeErrorBoundary } from "@/components/SafeErrorBoundary";
-import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical, CheckCircle2, Share2, Users, Copy, Link, Check } from "lucide-react";
+import { Loader2, Hexagon, Printer, Download, Layers, Map as MapIcon, Settings2, FileEdit, ArrowLeft, Trash2, Edit2, MapPin, Building2, Store, Factory, TreePine, Map, Plus, GripVertical, CheckCircle2, Share2, Users, Copy, Link, Check, X } from "lucide-react";
 
 const MapWrapper = dynamic(() => import("@/components/MapWrapper"), { 
   ssr: false,
@@ -44,10 +44,16 @@ interface FormField {
 }
 
 const DEFAULT_SCHEMA: FormField[] = [
-  { id: 'houseNo', label: 'House No.', type: 'shortText', options: [], required: false, visible: true },
-  { id: 'floors', label: 'number', type: 'number', options: [], required: true, visible: true },
+  { id: 'houseNo', label: 'House No. / Plot No.', type: 'shortText', options: [], required: false, visible: true },
   { id: 'buildingName', label: 'Building Name', type: 'shortText', options: [], required: false, visible: true },
-  { id: 'landUse', label: 'Land Use / Category', type: 'combobox', options: ['Residential', 'Commercial', 'Industrial', 'Mixed Use', 'Open Space'], required: true, visible: true, showInAnalytics: true },
+  { id: 'landUse', label: 'Land Use / Category', type: 'combobox', options: ['Residential', 'Commercial', 'Industrial', 'Mixed Use', 'Public/Semi-Public', 'Open Space'], required: true, visible: true, showInAnalytics: true },
+  { id: 'floors', label: 'Number of Floors', type: 'number', options: [], required: true, visible: true },
+  { id: 'structureType', label: 'Structural Type', type: 'multipleChoice', options: ['RCC (Concrete)', 'Load Bearing', 'Temporary / Kutcha', 'Wooden / Heritage'], required: false, visible: true, showInAnalytics: true },
+  { id: 'condition', label: 'Building Condition', type: 'multipleChoice', options: ['Good', 'Fair', 'Poor', 'Dilapidated / Ruins'], required: false, visible: true, showInAnalytics: true },
+  { id: 'occupancy', label: 'Occupancy Status', type: 'multipleChoice', options: ['Fully Occupied', 'Partially Occupied', 'Vacant', 'Under Construction'], required: false, visible: true, showInAnalytics: true },
+  { id: 'roadWidth', label: 'Approach Road Width (m)', type: 'number', options: [], required: false, visible: true },
+  { id: 'hasParking', label: 'Has Dedicated Parking?', type: 'checkbox', options: [], required: false, visible: true },
+  { id: 'remarks', label: 'Inspector Remarks / Notes', type: 'longText', options: [], required: false, visible: true },
 ];
 
 export default function DashboardProjectPage() {
@@ -705,9 +711,9 @@ export default function DashboardProjectPage() {
       {isNewSurveyModalOpen && (
         <SafeErrorBoundary componentName="New Survey Modal">
           <DraggablePanel initialPosition={{ x: 40, y: 100 }} className="z-50 w-full max-w-md">
-            <div className="bg-[#111827]/70 backdrop-blur-2xl border border-indigo-500/30 rounded-2xl shadow-[0_0_50px_rgba(99,102,241,0.2)] overflow-hidden">
+            <div className="bg-[#0b1121]/40 backdrop-blur-[40px] border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.05)] overflow-hidden">
             <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
-              <div className="w-12 h-1 bg-white/20 rounded-full"></div>
+              <div className="w-12 h-1 bg-white/30 rounded-full"></div>
             </div>
             <div className="p-6 pt-2 max-h-[85vh] overflow-y-auto custom-scrollbar">
               <div className="flex justify-between items-center mb-6">
@@ -857,9 +863,9 @@ export default function DashboardProjectPage() {
       {viewedSurvey && (
         <SafeErrorBoundary componentName="Edit Survey Modal">
           <DraggablePanel initialPosition={{ x: 40, y: 100 }} className="z-50 w-full max-w-md">
-            <div className="bg-[#111827]/70 backdrop-blur-2xl border border-indigo-500/30 rounded-2xl shadow-[0_0_50px_rgba(99,102,241,0.2)] overflow-hidden">
+            <div className="bg-[#0b1121]/40 backdrop-blur-[40px] border border-white/20 rounded-2xl shadow-[0_8px_32px_rgba(255,255,255,0.05)] overflow-hidden">
               <div className="drag-handle cursor-grab active:cursor-grabbing w-full h-8 bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
-                <div className="w-12 h-1 bg-white/20 rounded-full"></div>
+                <div className="w-12 h-1 bg-white/30 rounded-full"></div>
               </div>
               <div className="p-6 pt-2 max-h-[85vh] overflow-y-auto custom-scrollbar">
                 <div className="flex justify-between items-center mb-6">
