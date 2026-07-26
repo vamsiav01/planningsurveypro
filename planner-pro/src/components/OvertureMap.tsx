@@ -10,6 +10,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 // Register PMTiles protocol globally
 let pmtilesRegistered = false;
+if (typeof window !== 'undefined' && !pmtilesRegistered) {
+  const protocol = new Protocol();
+  maplibregl.addProtocol("pmtiles", protocol.tile);
+  pmtilesRegistered = true;
+}
 
 interface OvertureMapProps {
   surveys: any[];
@@ -33,13 +38,7 @@ export default function OvertureMap({ surveys, onMapClick, onSurveyClick, onAuto
     bearing: 0
   });
 
-  useEffect(() => {
-    if (!pmtilesRegistered) {
-      const protocol = new Protocol();
-      maplibregl.addProtocol("pmtiles", protocol.tile);
-      pmtilesRegistered = true;
-    }
-  }, []);
+
 
   const handleMapClick = (e: any) => {
     if (!mapRef.current) return;
@@ -125,13 +124,6 @@ export default function OvertureMap({ surveys, onMapClick, onSurveyClick, onAuto
         onClick={handleMapClick}
         interactiveLayerIds={['overture-buildings-3d', 'overture-buildings-flat']}
         onLoad={() => setIsMapLoading(false)}
-        onData={(e) => {
-          if (e.dataType === 'source' && e.isSourceLoaded) {
-            setIsMapLoading(false);
-          } else {
-            setIsMapLoading(true);
-          }
-        }}
         onIdle={() => setIsMapLoading(false)}
         mapStyle={{
           version: 8,
@@ -143,7 +135,8 @@ export default function OvertureMap({ surveys, onMapClick, onSurveyClick, onAuto
             },
             'overture': {
               type: 'vector',
-              url: overturePMTilesUrl
+              url: overturePMTilesUrl,
+              maxzoom: 15
             }
           },
           layers: [
