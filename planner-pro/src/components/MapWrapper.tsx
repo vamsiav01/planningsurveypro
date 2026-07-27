@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, Fragment } from "react";
+import { useEffect, useState, useRef, Fragment, useMemo } from "react";
 import { MapContainer, TileLayer, Marker, useMapEvents, LayersControl, Polygon, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -8,8 +8,11 @@ import "leaflet-draw/dist/leaflet.draw.css";
 import "leaflet-draw";
 import "leaflet-geosearch/dist/geosearch.css";
 import { GeoSearchControl, OpenStreetMapProvider } from "leaflet-geosearch";
+import { PMTiles } from "pmtiles";
+import { VectorTile } from "@mapbox/vector-tile";
+import Pbf from "pbf";
 
-// Custom marker icon to avoid missing default assets
+// Custom marker icon
 const defaultIcon = L.divIcon({
   className: 'custom-div-icon',
   html: `<div style="background-color: #6366f1; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`,
@@ -33,19 +36,10 @@ function SearchControl() {
   useEffect(() => {
     const provider = new OpenStreetMapProvider();
     const searchControl = new (GeoSearchControl as any)({
-      provider: provider,
-      style: 'bar',
-      showMarker: false,
-      retainZoomLevel: false,
-      animateZoom: true,
-      autoClose: true,
-      searchLabel: 'Search location...',
-      keepResult: true
+      provider, style: 'bar', showMarker: false, retainZoomLevel: false, animateZoom: true, autoClose: true, searchLabel: 'Search location...', keepResult: true
     });
     map.addControl(searchControl);
-    return () => {
-      map.removeControl(searchControl);
-    };
+    return () => { map.removeControl(searchControl); };
   }, [map]);
   return null;
 }
@@ -53,231 +47,219 @@ function SearchControl() {
 function DrawControl({ onDrawCreate }: { onDrawCreate?: (layer: any) => void }) {
   const map = useMap();
   const drawnItemsRef = useRef(new L.FeatureGroup());
-
   useEffect(() => {
     const drawnItems = drawnItemsRef.current;
     map.addLayer(drawnItems);
-
     const drawControl = new L.Control.Draw({
       position: 'topleft',
-      edit: {
-        featureGroup: drawnItems,
-        remove: true
-      },
-      draw: {
-        polyline: false,
-        circle: false,
-        circlemarker: false,
-        marker: {},
-        polygon: {
-          allowIntersection: false,
-          drawError: { color: '#e1e100', message: '<strong>Oh snap!<strong> you can\'t draw that!' },
-          shapeOptions: { color: '#3b82f6' }
-        },
-        rectangle: {
-          shapeOptions: { color: '#3b82f6' }
-        }
-      }
+      edit: { featureGroup: drawnItems, remove: true },
+      draw: { polyline: false, circle: false, circlemarker: false, marker: {}, polygon: { allowIntersection: false, shapeOptions: { color: '#3b82f6' } }, rectangle: { shapeOptions: { color: '#3b82f6' } } }
     });
     map.addControl(drawControl);
-
     map.on(L.Draw.Event.CREATED, (e: any) => {
-      const layer = e.layer;
-      drawnItems.addLayer(layer);
-      if (onDrawCreate) {
-        onDrawCreate(layer);
-      }
+      drawnItems.addLayer(e.layer);
+      if (onDrawCreate) onDrawCreate(e.layer);
     });
-
-    return () => {
-      map.removeControl(drawControl);
-      map.removeLayer(drawnItems);
-    };
+    return () => { map.removeControl(drawControl); map.removeLayer(drawnItems); };
   }, [map, onDrawCreate]);
-
   return null;
 }
 
-function GeolocationEvents({ onMapClick }: { onMapClick: (lat: number, lng: number, preFetchedFootprint?: any) => void }) {
+function GeolocationEvents({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
   const map = useMap();
-
-  useEffect(() => {
-    // Request location on mount
-    map.locate({ setView: true, maxZoom: 16 });
-  }, [map]);
-
-  useMapEvents({
-    click(e) {
-      onMapClick(e.latlng.lat, e.latlng.lng);
-    },
-    locationfound(e) {
-      // Optional: draw a marker for user location
-    }
-  });
+  useEffect(() => { map.locate({ setView: true, maxZoom: 16 }); }, [map]);
+  useMapEvents({ click(e) { onMapClick(e.latlng.lat, e.latlng.lng); } });
   return null;
 }
 
-function BoundingBoxFetcher({
-  onMapClick,
-  activeFootprintId,
-  surveys
-}: {
-  onMapClick: (lat: number, lng: number, preFetchedFootprint?: any) => void;
-  activeFootprintId?: string | number;
-  surveys: any[];
-}) {
-  const map = useMapEvents({
-    moveend() {
-      fetchBuildingsInBounds();
-    }
-  });
+function LocateControl() {
+  const map = useMap();
+  const [locating, setLocating] = useState(false);
 
-  const [bgFootprints, setBgFootprints] = useState<any[]>([]);
-  const fetchTimeout = useRef<NodeJS.Timeout | null>(null);
-  const fetchIdRef = useRef(0);
-
-  const fetchBuildingsInBounds = async () => {
-    const currentZoom = map.getZoom();
-    
-    // Zoom < 10 is too far even for out center
-    if (currentZoom < 10) {
-      setBgFootprints([]); 
-      return; 
-    }
-
-    if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
-
-    // Debounce to prevent spamming API while panning quickly
-    fetchTimeout.current = setTimeout(() => {
-      const currentFetchId = ++fetchIdRef.current;
-      setBgFootprints([]);
-
-      const bounds = map.getBounds();
-      const s = bounds.getSouth();
-      const w = bounds.getWest();
-      const n = bounds.getNorth();
-      const e = bounds.getEast();
-
-      const queryType = currentZoom < 15 ? 'out center;' : 'out body; >;';
-
-      const q = `
-        [out:json][timeout:25];
-        (
-          node["building"](${s},${w},${n},${e});
-          way["building"](${s},${w},${n},${e});
-          relation["building"](${s},${w},${n},${e});
-          node["building:part"](${s},${w},${n},${e});
-          way["building:part"](${s},${w},${n},${e});
-          relation["building:part"](${s},${w},${n},${e});
-        );
-        ${queryType}
-      `;
-
-      // 1. Fetch Overpass (OSM)
-      fetch("https://overpass-api.de/api/interpreter", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: "data=" + encodeURIComponent(q)
-      })
-        .then(async res => {
-          const text = await res.text();
-          if (!res.ok) {
-            throw new Error(`Overpass HTTP error ${res.status}: ${text.substring(0, 100)}`);
-          }
-          try {
-            return JSON.parse(text);
-          } catch (e) {
-            throw new Error(`Invalid JSON from Overpass: ${text.substring(0, 100)}`);
-          }
-        })
-        .then(data => {
-          if (fetchIdRef.current !== currentFetchId) return;
-          const newFootprints: any[] = [];
-        if (data.elements && data.elements.length > 0) {
-          const offset = 0.000015; // Approx 1.6 meters (3x3m trick squares)
-          
-          data.elements.forEach((e: any) => {
-            if (e.tags && (e.tags.building || e.tags['building:part'])) {
-              let coords: [number, number][] = [];
-              
-              if (e.type === 'way' && e.nodes && e.nodes.length > 0 && !e.center) {
-                // Polygon from 'out body; >'
-                e.nodes.forEach((nodeId: number) => {
-                  const node = data.elements.find((n: any) => n.type === 'node' && n.id === nodeId);
-                  if (node) coords.push([node.lat, node.lon]);
-                });
-              } else if (e.type === 'way' && e.center) {
-                // Center point from 'out center;'
-                coords = [
-                  [e.center.lat - offset, e.center.lon - offset],
-                  [e.center.lat - offset, e.center.lon + offset],
-                  [e.center.lat + offset, e.center.lon + offset],
-                  [e.center.lat + offset, e.center.lon - offset],
-                ];
-              } else if (e.type === 'node') {
-                // Node building
-                coords = [
-                  [e.lat - offset, e.lon - offset],
-                  [e.lat - offset, e.lon + offset],
-                  [e.lat + offset, e.lon + offset],
-                  [e.lat + offset, e.lon - offset],
-                ];
-              }
-              
-              if (coords.length > 0) {
-                newFootprints.push({ coords, tags: e.tags, id: e.id, source: 'osm' });
-              }
-            }
-          });
-        }
-        setBgFootprints(prev => [...prev, ...newFootprints]);
-        })
-        .catch(err => console.error("Overpass API error:", err));
-
-      // 2. Fetch ESRI (Microsoft AI Footprints)
-      const esriUrl = `https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/MSBFP2/FeatureServer/0/query?f=json&geometry=${w},${s},${e},${n}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true`;
-
-      fetch(esriUrl)
-        .then(res => res.json())
-        .then(esriData => {
-          if (fetchIdRef.current !== currentFetchId) return;
-          const newFootprints: any[] = [];
-          if (esriData && esriData.features && esriData.features.length > 0) {
-            esriData.features.forEach((feature: any) => {
-              if (feature.geometry && feature.geometry.rings && feature.geometry.rings.length > 0) {
-                const coords = feature.geometry.rings[0].map((pt: [number, number]) => [pt[1], pt[0]]);
-                if (coords.length > 0) {
-                  const id = `esri-${feature.attributes?.OBJECTID || Math.random().toString()}`;
-                  newFootprints.push({ coords, tags: { building: 'yes', source: 'Microsoft AI' }, id, source: 'esri' });
-                }
-              }
-            });
-          }
-          setBgFootprints(prev => [...prev, ...newFootprints]);
-        })
-        .catch(err => console.error("ESRI Footprints API error:", err));
-
-    }, 500);
+  const locate = () => {
+    setLocating(true);
+    map.locate({ setView: true, maxZoom: 18 });
+    map.once('locationfound', () => setLocating(false));
+    map.once('locationerror', () => {
+      setLocating(false);
+      alert('Unable to retrieve your location. Please check browser permissions.');
+    });
   };
 
-  // Initial fetch on mount if zoom is sufficient
+  return (
+    <div className="leaflet-top leaflet-right" style={{ top: '130px' }}>
+      <div className="leaflet-control leaflet-bar">
+        <a 
+          href="#"
+          onClick={(e) => { e.preventDefault(); locate(); }}
+          className="w-[34px] h-[34px] bg-white hover:bg-gray-100 flex items-center justify-center text-gray-700"
+          title="Locate Me"
+          style={{ textDecoration: 'none' }}
+        >
+          {locating ? (
+            <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+          )}
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// Global PMTiles instance
+const pmtilesUrl = "https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles/2026-07-22.0/buildings.pmtiles";
+const p = new PMTiles(pmtilesUrl);
+
+// Cache fetched tiles to avoid redownloading
+const tileCache = new Map<string, any[]>();
+
+function GlobalPmtilesFetcher({
+  onMapClick, activeFootprintId, surveys, onLoading
+}: {
+  onMapClick: (lat: number, lng: number, fp: any) => void;
+  activeFootprintId?: string | number;
+  surveys: any[];
+  onLoading: (isLoading: boolean) => void;
+}) {
+  const map = useMap();
+  const [bgFootprints, setBgFootprints] = useState<any[]>([]);
+
+  const fetchTiles = async () => {
+    const zoom = map.getZoom();
+    const tileZoom = Math.min(zoom, 14); 
+
+    if (zoom < 14) {
+      setBgFootprints([]);
+      return;
+    }
+
+    onLoading(true);
+    const bounds = map.getBounds();
+    const north = bounds.getNorth();
+    const south = bounds.getSouth();
+    const west = bounds.getWest();
+    const east = bounds.getEast();
+
+    const xMin = Math.floor((west + 180) / 360 * Math.pow(2, tileZoom));
+    const xMax = Math.floor((east + 180) / 360 * Math.pow(2, tileZoom));
+    const yMin = Math.floor((1 - Math.log(Math.tan(north * Math.PI / 180) + 1 / Math.cos(north * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, tileZoom));
+    const yMax = Math.floor((1 - Math.log(Math.tan(south * Math.PI / 180) + 1 / Math.cos(south * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, tileZoom));
+
+    let allFeatures: any[] = [];
+    let tilePromises = [];
+
+    for (let x = xMin; x <= xMax; x++) {
+      for (let y = yMin; y <= yMax; y++) {
+        const tileKey = `${tileZoom}-${x}-${y}`;
+        
+        if (tileCache.has(tileKey)) {
+          allFeatures = allFeatures.concat(tileCache.get(tileKey));
+          continue;
+        }
+
+        const fetchPromise = p.getZxy(tileZoom, x, y).then(tileData => {
+          if (!tileData) {
+            tileCache.set(tileKey, []);
+            return [];
+          }
+          
+          let tile;
+          try {
+            tile = new VectorTile(new Pbf(new Uint8Array(tileData.data)) as any);
+          } catch(e) {
+            console.error("VectorTile decode error (is DecompressionStream missing?):", e);
+            tileCache.set(tileKey, []);
+            return [];
+          }
+          
+          const layer = tile.layers['building'] || tile.layers['building_part'];
+          const features = [];
+          
+          if (layer) {
+            for (let i = 0; i < layer.length; i++) {
+              const feature = layer.feature(i);
+              const geojson = feature.toGeoJSON(x, y, tileZoom);
+              
+              if (geojson.geometry.type === 'Polygon') {
+                const leafletCoords = geojson.geometry.coordinates[0].map((coord: number[]) => [coord[1], coord[0]]);
+                const props = geojson.properties || {};
+                features.push({
+                  id: props.id || `${tileKey}-${i}`,
+                  name: props.names?.primary || props.name || '',
+                  height: props.height || null,
+                  coords: leafletCoords
+                });
+              } else if (geojson.geometry.type === 'MultiPolygon') {
+                const leafletCoords = geojson.geometry.coordinates[0][0].map((coord: number[]) => [coord[1], coord[0]]);
+                const props = geojson.properties || {};
+                features.push({
+                  id: props.id || `${tileKey}-${i}`,
+                  name: props.names?.primary || props.name || '',
+                  height: props.height || null,
+                  coords: leafletCoords
+                });
+              }
+            }
+          }
+          tileCache.set(tileKey, features);
+          return features;
+        }).catch(err => {
+          console.error("PMTiles error:", err);
+          tileCache.set(tileKey, []);
+          return [];
+        });
+
+        tilePromises.push(fetchPromise);
+      }
+    }
+
+    try {
+      const results = await Promise.all(tilePromises);
+      results.forEach(res => {
+        allFeatures = allFeatures.concat(res);
+      });
+      
+      // OPTIMIZATION: Filter features to ONLY those visible in current map bounds!
+      // This prevents React Leaflet from freezing the browser with 10,000+ off-screen polygons.
+      const pad = 0.001; // small padding
+      const s = south - pad;
+      const n = north + pad;
+      const w = west - pad;
+      const e = east + pad;
+      
+      const visibleFeatures = allFeatures.filter(f => {
+        if (!f.coords || f.coords.length === 0) return false;
+        // Check if the first point of the polygon is within bounds
+        const lat = f.coords[0][0];
+        const lon = f.coords[0][1];
+        return lat >= s && lat <= n && lon >= w && lon <= e;
+      });
+      
+      setBgFootprints(visibleFeatures);
+    } catch (e) {
+      console.error(e);
+    }
+    
+    onLoading(false);
+  };
+
   useEffect(() => {
-    fetchBuildingsInBounds();
+    fetchTiles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useMapEvents({
+    moveend: fetchTiles,
+    zoomend: fetchTiles
+  });
 
   return (
     <>
       {bgFootprints.map((footprint) => {
-        // Hide if it's the actively selected building (blue)
         if (activeFootprintId && activeFootprintId === footprint.id) return null;
-
-        // Hide if it's already a saved survey (prevent overlapping colors)
         const isSaved = surveys.some(s => s.osmData?.id === footprint.id);
         if (isSaved) return null;
-
         return (
           <Polygon
             key={footprint.id}
@@ -286,11 +268,15 @@ function BoundingBoxFetcher({
             eventHandlers={{
               click: (e: any) => {
                 L.DomEvent.stopPropagation(e.originalEvent || e);
-                onMapClick(e.latlng.lat, e.latlng.lng, footprint);
+                onMapClick(e.latlng.lat, e.latlng.lng, {
+                  coords: footprint.coords,
+                  id: footprint.id,
+                  tags: { name: footprint.name, height: footprint.height, building: 'yes', source: 'OvertureMaps AI' }
+                });
               }
             }}
           >
-            <Tooltip>Unsurveyed Building</Tooltip>
+            <Tooltip>{footprint.name || 'Unsurveyed AI Building'}</Tooltip>
           </Polygon>
         );
       })}
@@ -298,58 +284,40 @@ function BoundingBoxFetcher({
   );
 }
 
-
 export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurveyClick, activeClickLoc, activeFootprint, loadingFootprint }: MapWrapperProps) {
   const [mounted, setMounted] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(true);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
+  useEffect(() => { setMounted(true); }, []);
   if (!mounted) return null;
 
   return (
     <div className="w-full h-full relative z-0 bg-[#0b1121]">
-      <MapContainer
-        center={[20.5937, 78.9629]} // Default, will fly to GPS location if granted
-        zoom={5}
-        style={{ height: '100%', width: '100%', zIndex: 1 }}
-        zoomControl={true}
-        preferCanvas={true}
-      >
+      <MapContainer center={[23.25, 77.40]} zoom={15} style={{ height: '100%', width: '100%', zIndex: 1 }} zoomControl={true} preferCanvas={true}>
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="Satellite">
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              maxZoom={19}
-            />
+            <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxZoom={19} />
           </LayersControl.BaseLayer>
           <LayersControl.BaseLayer name="OpenStreetMap">
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           </LayersControl.BaseLayer>
         </LayersControl>
-
         <SearchControl />
         <DrawControl onDrawCreate={onDrawCreate} />
         <GeolocationEvents onMapClick={onMapClick} />
-
-        {/* Dynamic Bounding Box Building Fetcher */}
-        <BoundingBoxFetcher
-          onMapClick={onMapClick}
-          activeFootprintId={activeFootprint?.id}
-          surveys={surveys}
-        />
-
+        <LocateControl />
+        <GlobalPmtilesFetcher onMapClick={onMapClick} activeFootprintId={activeFootprint?.id} surveys={surveys} onLoading={(loading) => setIsAiLoading(loading)} />
         {/* Existing Saved Surveys */}
         {surveys.map((survey, index) => {
           let fillColor = "#8b5cf6"; // Default purple
-          if (survey.answers?.floors) {
-            const floors = String(survey.answers.floors).toLowerCase();
-            if (floors === 'g' || floors === '1') fillColor = "#22c55e"; // Green
-            else if (floors === 'g+1' || floors === '2') fillColor = "#3b82f6"; // Blue
-            else if (floors === 'g+2' || floors === '3') fillColor = "#eab308"; // Yellow
-            else if (floors === 'g+3' || floors === '4') fillColor = "#f97316"; // Orange
-            else fillColor = "#ef4444"; // Red for G+4 and above
+          const ans = survey.answers || survey;
+          if (ans.floors) {
+            const floorsStr = String(ans.floors).toLowerCase().replace(/\s+/g, '');
+            if (floorsStr.includes('sg1') || floorsStr.includes('g+4') || floorsStr.includes('g4')) fillColor = "#ef4444"; // Red
+            else if (floorsStr.includes('g3') || floorsStr.includes('g+3')) fillColor = "#f97316"; // Orange
+            else if (floorsStr.includes('g2') || floorsStr.includes('g+2')) fillColor = "#eab308"; // Yellow
+            else if (floorsStr.includes('g1') || floorsStr.includes('g+1')) fillColor = "#3b82f6"; // Blue
+            else if (floorsStr === 'g' || floorsStr === '1') fillColor = "#22c55e"; // Green
           }
 
           const sLabel = `S${index + 1}`;
@@ -410,10 +378,17 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurvey
         )}
       </MapContainer>
 
-      {loadingFootprint && (
+      {isAiLoading && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-indigo-600/90 backdrop-blur-sm text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 animate-pulse border border-white/20">
           <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-          Detecting Building Boundary...
+          Loading High-Res AI Polygons...
+        </div>
+      )}
+
+      {loadingFootprint && !isAiLoading && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-blue-600/90 backdrop-blur-sm text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 animate-pulse border border-white/20">
+          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+          Extracting Building Boundary...
         </div>
       )}
     </div>
