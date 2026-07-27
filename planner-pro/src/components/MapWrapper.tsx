@@ -24,7 +24,7 @@ interface MapWrapperProps {
   onDrawCreate?: (layer: any) => void;
   onSurveyClick?: (survey: any) => void;
   activeClickLoc: { lat: number; lng: number } | null;
-  activeFootprint: {coords: [number, number][], tags: any, id?: string | number} | null;
+  activeFootprint: { coords: [number, number][], tags: any, id?: string | number } | null;
   loadingFootprint: boolean;
 }
 
@@ -100,7 +100,7 @@ function DrawControl({ onDrawCreate }: { onDrawCreate?: (layer: any) => void }) 
 
 function GeolocationEvents({ onMapClick }: { onMapClick: (lat: number, lng: number, preFetchedFootprint?: any) => void }) {
   const map = useMap();
-  
+
   useEffect(() => {
     // Request location on mount
     map.locate({ setView: true, maxZoom: 16 });
@@ -117,11 +117,11 @@ function GeolocationEvents({ onMapClick }: { onMapClick: (lat: number, lng: numb
   return null;
 }
 
-function BoundingBoxFetcher({ 
-  onMapClick, 
+function BoundingBoxFetcher({
+  onMapClick,
   activeFootprintId,
   surveys
-}: { 
+}: {
   onMapClick: (lat: number, lng: number, preFetchedFootprint?: any) => void;
   activeFootprintId?: string | number;
   surveys: any[];
@@ -137,13 +137,16 @@ function BoundingBoxFetcher({
   const fetchIdRef = useRef(0);
 
   const fetchBuildingsInBounds = async () => {
-    if (map.getZoom() < 16) {
-      setBgFootprints([]); // Clear when zoomed out
+    const currentZoom = map.getZoom();
+    
+    // Zoom < 10 is too far even for out center
+    if (currentZoom < 10) {
+      setBgFootprints([]); 
       return; 
     }
 
     if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
-    
+
     // Debounce to prevent spamming API while panning quickly
     fetchTimeout.current = setTimeout(() => {
       const currentFetchId = ++fetchIdRef.current;
@@ -155,65 +158,106 @@ function BoundingBoxFetcher({
       const n = bounds.getNorth();
       const e = bounds.getEast();
 
+      const queryType = currentZoom < 15 ? 'out center;' : 'out body; >;';
+
       const q = `
         [out:json][timeout:25];
         (
+          node["building"](${s},${w},${n},${e});
           way["building"](${s},${w},${n},${e});
           relation["building"](${s},${w},${n},${e});
+          node["building:part"](${s},${w},${n},${e});
+          way["building:part"](${s},${w},${n},${e});
+          relation["building:part"](${s},${w},${n},${e});
         );
-        out body;
-        >;
-        out skel qt;
+        ${queryType}
       `;
-      
+
       // 1. Fetch Overpass (OSM)
       fetch("https://overpass-api.de/api/interpreter", {
         method: "POST",
-        body: q
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: "data=" + encodeURIComponent(q)
       })
-      .then(res => res.json())
-      .then(data => {
-        if (fetchIdRef.current !== currentFetchId) return;
-        const newFootprints: any[] = [];
+        .then(async res => {
+          const text = await res.text();
+          if (!res.ok) {
+            throw new Error(`Overpass HTTP error ${res.status}: ${text.substring(0, 100)}`);
+          }
+          try {
+            return JSON.parse(text);
+          } catch (e) {
+            throw new Error(`Invalid JSON from Overpass: ${text.substring(0, 100)}`);
+          }
+        })
+        .then(data => {
+          if (fetchIdRef.current !== currentFetchId) return;
+          const newFootprints: any[] = [];
         if (data.elements && data.elements.length > 0) {
-          const ways = data.elements.filter((e: any) => e.type === 'way' && e.tags && e.tags.building);
-          ways.forEach((way: any) => {
-            const coords: [number, number][] = [];
-            way.nodes.forEach((nodeId: number) => {
-              const node = data.elements.find((e: any) => e.type === 'node' && e.id === nodeId);
-              if (node) coords.push([node.lat, node.lon]);
-            });
-            if (coords.length > 0) {
-              newFootprints.push({ coords, tags: way.tags, id: way.id, source: 'osm' });
-            }
-          });
-        }
-        setBgFootprints(prev => [...prev, ...newFootprints]);
-      })
-      .catch(err => console.error("Overpass API error:", err));
-
-      // 2. Fetch ESRI (Microsoft AI Footprints)
-      const esriUrl = `https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/MSBFP2/FeatureServer/0/query?f=json&geometry=${w},${s},${e},${n}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true`;
-      
-      fetch(esriUrl)
-      .then(res => res.json())
-      .then(esriData => {
-        if (fetchIdRef.current !== currentFetchId) return;
-        const newFootprints: any[] = [];
-        if (esriData && esriData.features && esriData.features.length > 0) {
-          esriData.features.forEach((feature: any) => {
-            if (feature.geometry && feature.geometry.rings && feature.geometry.rings.length > 0) {
-              const coords = feature.geometry.rings[0].map((pt: [number, number]) => [pt[1], pt[0]]);
+          const offset = 0.000015; // Approx 1.6 meters (3x3m trick squares)
+          
+          data.elements.forEach((e: any) => {
+            if (e.tags && (e.tags.building || e.tags['building:part'])) {
+              let coords: [number, number][] = [];
+              
+              if (e.type === 'way' && e.nodes && e.nodes.length > 0 && !e.center) {
+                // Polygon from 'out body; >'
+                e.nodes.forEach((nodeId: number) => {
+                  const node = data.elements.find((n: any) => n.type === 'node' && n.id === nodeId);
+                  if (node) coords.push([node.lat, node.lon]);
+                });
+              } else if (e.type === 'way' && e.center) {
+                // Center point from 'out center;'
+                coords = [
+                  [e.center.lat - offset, e.center.lon - offset],
+                  [e.center.lat - offset, e.center.lon + offset],
+                  [e.center.lat + offset, e.center.lon + offset],
+                  [e.center.lat + offset, e.center.lon - offset],
+                ];
+              } else if (e.type === 'node') {
+                // Node building
+                coords = [
+                  [e.lat - offset, e.lon - offset],
+                  [e.lat - offset, e.lon + offset],
+                  [e.lat + offset, e.lon + offset],
+                  [e.lat + offset, e.lon - offset],
+                ];
+              }
+              
               if (coords.length > 0) {
-                const id = `esri-${feature.attributes?.OBJECTID || Math.random().toString()}`;
-                newFootprints.push({ coords, tags: { building: 'yes', source: 'Microsoft AI' }, id, source: 'esri' });
+                newFootprints.push({ coords, tags: e.tags, id: e.id, source: 'osm' });
               }
             }
           });
         }
         setBgFootprints(prev => [...prev, ...newFootprints]);
-      })
-      .catch(err => console.error("ESRI Footprints API error:", err));
+        })
+        .catch(err => console.error("Overpass API error:", err));
+
+      // 2. Fetch ESRI (Microsoft AI Footprints)
+      const esriUrl = `https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/MSBFP2/FeatureServer/0/query?f=json&geometry=${w},${s},${e},${n}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true`;
+
+      fetch(esriUrl)
+        .then(res => res.json())
+        .then(esriData => {
+          if (fetchIdRef.current !== currentFetchId) return;
+          const newFootprints: any[] = [];
+          if (esriData && esriData.features && esriData.features.length > 0) {
+            esriData.features.forEach((feature: any) => {
+              if (feature.geometry && feature.geometry.rings && feature.geometry.rings.length > 0) {
+                const coords = feature.geometry.rings[0].map((pt: [number, number]) => [pt[1], pt[0]]);
+                if (coords.length > 0) {
+                  const id = `esri-${feature.attributes?.OBJECTID || Math.random().toString()}`;
+                  newFootprints.push({ coords, tags: { building: 'yes', source: 'Microsoft AI' }, id, source: 'esri' });
+                }
+              }
+            });
+          }
+          setBgFootprints(prev => [...prev, ...newFootprints]);
+        })
+        .catch(err => console.error("ESRI Footprints API error:", err));
 
     }, 500);
   };
@@ -229,7 +273,7 @@ function BoundingBoxFetcher({
       {bgFootprints.map((footprint) => {
         // Hide if it's the actively selected building (blue)
         if (activeFootprintId && activeFootprintId === footprint.id) return null;
-        
+
         // Hide if it's already a saved survey (prevent overlapping colors)
         const isSaved = surveys.some(s => s.osmData?.id === footprint.id);
         if (isSaved) return null;
@@ -271,6 +315,7 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurvey
         zoom={5}
         style={{ height: '100%', width: '100%', zIndex: 1 }}
         zoomControl={true}
+        preferCanvas={true}
       >
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="Satellite">
@@ -287,10 +332,10 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurvey
         <SearchControl />
         <DrawControl onDrawCreate={onDrawCreate} />
         <GeolocationEvents onMapClick={onMapClick} />
-        
+
         {/* Dynamic Bounding Box Building Fetcher */}
-        <BoundingBoxFetcher 
-          onMapClick={onMapClick} 
+        <BoundingBoxFetcher
+          onMapClick={onMapClick}
           activeFootprintId={activeFootprint?.id}
           surveys={surveys}
         />
@@ -318,16 +363,16 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurvey
           return (
             <Fragment key={survey.id}>
               {survey.osmData?.coords && (
-                <Polygon 
-                  positions={survey.osmData.coords} 
+                <Polygon
+                  positions={survey.osmData.coords}
                   pathOptions={{ color: fillColor, weight: 2, fillColor: fillColor, fillOpacity: 0.5 }}
                   eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onSurveyClick) onSurveyClick(survey); } }}
                 >
                   <Tooltip>{survey.answers?.houseNo || survey.answers?.buildingName || 'Surveyed Building'}</Tooltip>
                 </Polygon>
               )}
-              
-              <Marker 
+
+              <Marker
                 position={[survey.location.lat, survey.location.lng]}
                 icon={labelIcon}
                 eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onSurveyClick) onSurveyClick(survey); } }}
@@ -340,8 +385,8 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurvey
 
         {/* Active Click Location */}
         {activeClickLoc && (
-          <Marker 
-            position={[activeClickLoc.lat, activeClickLoc.lng]} 
+          <Marker
+            position={[activeClickLoc.lat, activeClickLoc.lng]}
             icon={L.divIcon({
               className: 'active-pin',
               html: `
@@ -358,13 +403,13 @@ export default function MapWrapper({ surveys, onMapClick, onDrawCreate, onSurvey
 
         {/* Active Overpass Footprint Outline */}
         {activeFootprint && (
-          <Polygon 
-            positions={activeFootprint.coords} 
+          <Polygon
+            positions={activeFootprint.coords}
             pathOptions={{ color: "#3b82f6", weight: 3, fillOpacity: 0.2 }}
           />
         )}
       </MapContainer>
-      
+
       {loadingFootprint && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-indigo-600/90 backdrop-blur-sm text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 animate-pulse border border-white/20">
           <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>

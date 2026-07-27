@@ -21,10 +21,23 @@ const MapWrapper = dynamic(() => import("@/components/MapWrapper"), {
   )
 });
 
-// Helper to calculate area of polygon
+// Helper to calculate area of polygon in square meters using Shoelace formula
 function calculatePolygonArea(coords: [number, number][]) {
   if (coords.length < 3) return 0;
-  return Math.floor(Math.random() * 500 + 100); // Temporary placeholder
+  let area = 0;
+  // Convert degrees to approximate meters
+  const latFactor = 111139;
+  const lngFactor = 111139 * Math.cos((coords[0][0] * Math.PI) / 180);
+  
+  for (let i = 0; i < coords.length; i++) {
+    let j = (i + 1) % coords.length;
+    let xi = coords[i][1] * lngFactor;
+    let yi = coords[i][0] * latFactor;
+    let xj = coords[j][1] * lngFactor;
+    let yj = coords[j][0] * latFactor;
+    area += xi * yj - xj * yi;
+  }
+  return Math.abs(area / 2);
 }
 
 interface DashboardProps {
@@ -100,6 +113,54 @@ export default function Dashboard({ params }: DashboardProps) {
     return () => unsubscribe();
   }, [projectId, user]);
 
+  const resolveBuildingDetails = async (coords: [number, number][], tags: any, lat: number, lng: number) => {
+    let fetchedName = tags.name || tags['addr:housename'] || "";
+    if (!fetchedName && tags['addr:housenumber'] && tags['addr:street']) {
+      fetchedName = `${tags['addr:housenumber']} ${tags['addr:street']}`;
+    } else if (!fetchedName && tags['addr:housenumber']) {
+      fetchedName = tags['addr:housenumber'];
+    }
+
+    let fetchedFloors = tags['building:levels'] || "";
+    if (!fetchedFloors && coords.length > 0) {
+      // TRICK: estimate floors from footprint area
+      const area = calculatePolygonArea(coords);
+      if (area > 800) fetchedFloors = "4"; // G+3
+      else if (area > 300) fetchedFloors = "3"; // G+2
+      else if (area > 100) fetchedFloors = "2"; // G+1
+      else fetchedFloors = "1"; // G
+    } else if (!fetchedFloors) {
+      fetchedFloors = "1";
+    }
+
+    const bType = String(tags.building || '').toLowerCase();
+    let fetchedZoning = "residential";
+    if (['commercial', 'retail', 'office', 'supermarket'].includes(bType)) fetchedZoning = 'commercial';
+    else if (['industrial', 'warehouse', 'factory'].includes(bType)) fetchedZoning = 'industrial';
+    else if (['public', 'school', 'hospital', 'civic', 'government'].includes(bType)) fetchedZoning = 'public';
+
+    // TRICK: Reverse geocode to find name from online sources (Nominatim)
+    if (!fetchedName) {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+        const data = await res.json();
+        if (data && data.address) {
+          const a = data.address;
+          if (data.name) fetchedName = data.name;
+          else if (a.amenity) fetchedName = a.amenity;
+          else if (a.shop) fetchedName = a.shop;
+          else if (a.building) fetchedName = a.building;
+          else if (a.house_number && a.road) fetchedName = `${a.house_number} ${a.road}`;
+          else if (a.road) fetchedName = `Building on ${a.road}`;
+        }
+      } catch (e) {
+        console.error("Nominatim error:", e);
+      }
+    }
+    
+    return { fetchedName, fetchedFloors, fetchedZoning };
+  };
+
   const handleMapClick = async (lat: number, lng: number, preFetchedFootprint?: any) => {
     // Reset edit mode when clicking a new spot
     setSelectedSurveyId(null);
@@ -115,27 +176,15 @@ export default function Dashboard({ params }: DashboardProps) {
 
     if (preFetchedFootprint) {
       setActiveFootprint(preFetchedFootprint);
-      
-      // Auto-extract tags
-      if (preFetchedFootprint.tags) {
-        const t = preFetchedFootprint.tags;
-        
-        // Auto-fill House Name / Number
-        if (t.name) setHouseNo(t.name);
-        else if (t['addr:housenumber'] && t['addr:street']) setHouseNo(`${t['addr:housenumber']} ${t['addr:street']}`);
-        else if (t['addr:housenumber']) setHouseNo(t['addr:housenumber']);
-        
-        // Auto-fill Floors
-        if (t['building:levels']) setFloors(t['building:levels']);
-        
-        // Auto-fill Zoning
-        const bType = String(t.building || '').toLowerCase();
-        if (['residential', 'apartments', 'house', 'detached', 'terrace'].includes(bType)) setZoning('residential');
-        else if (['commercial', 'retail', 'office', 'supermarket'].includes(bType)) setZoning('commercial');
-        else if (['industrial', 'warehouse', 'factory'].includes(bType)) setZoning('industrial');
-        else if (['public', 'school', 'hospital', 'civic', 'government'].includes(bType)) setZoning('public');
-      }
-
+      setLoadingFootprint(true);
+      const { fetchedName, fetchedFloors, fetchedZoning } = await resolveBuildingDetails(
+        preFetchedFootprint.coords || [], 
+        preFetchedFootprint.tags || {}, 
+        lat, lng
+      );
+      if (fetchedName) setHouseNo(fetchedName);
+      if (fetchedFloors) setFloors(fetchedFloors);
+      if (fetchedZoning) setZoning(fetchedZoning);
       setLoadingFootprint(false);
       return;
     }
@@ -144,12 +193,13 @@ export default function Dashboard({ params }: DashboardProps) {
     setActiveFootprint(null);
     
     try {
-      // Increased radius to 25m for better rural detection
       const q = `
         [out:json][timeout:10];
         (
           way["building"](around:25, ${lat}, ${lng});
           relation["building"](around:25, ${lat}, ${lng});
+          way["building:part"](around:25, ${lat}, ${lng});
+          relation["building:part"](around:25, ${lat}, ${lng});
         );
         out body;
         >;
@@ -162,10 +212,10 @@ export default function Dashboard({ params }: DashboardProps) {
       const data = await response.json();
       
       let foundBuilding = null;
-      let tags = {};
+      let tags: any = {};
       
       if (data.elements && data.elements.length > 0) {
-        const ways = data.elements.filter((e: any) => e.type === 'way' && e.tags && e.tags.building);
+        const ways = data.elements.filter((e: any) => e.type === 'way' && e.tags && (e.tags.building || e.tags['building:part']));
         if (ways.length > 0) {
           const way = ways[0];
           tags = way.tags;
@@ -181,9 +231,35 @@ export default function Dashboard({ params }: DashboardProps) {
           if (coords.length > 0) {
             foundBuilding = { coords, tags, id: way.id };
             setActiveFootprint(foundBuilding);
+            
+            const { fetchedName, fetchedFloors, fetchedZoning } = await resolveBuildingDetails(coords, tags, lat, lng);
+            if (fetchedName) setHouseNo(fetchedName);
+            if (fetchedFloors) setFloors(fetchedFloors);
+            if (fetchedZoning) setZoning(fetchedZoning);
           }
         }
       }
+
+      // TRICK: If overpass fails to find a polygon, detect as building using a synthetic square
+      if (!foundBuilding) {
+         const { fetchedName, fetchedFloors, fetchedZoning } = await resolveBuildingDetails([], {}, lat, lng);
+         
+         // Create a 10x10m square footprint trick so every building can be detected and tracked
+         const latOffset = 0.000045; // roughly 5m
+         const lngOffset = 0.000045 / Math.cos(lat * Math.PI / 180);
+         const trickCoords: [number, number][] = [
+           [lat + latOffset, lng - lngOffset],
+           [lat + latOffset, lng + lngOffset],
+           [lat - latOffset, lng + lngOffset],
+           [lat - latOffset, lng - lngOffset]
+         ];
+         setActiveFootprint({ coords: trickCoords, tags: { building: 'yes', source: 'synthetic_trick' }, id: 'generated-' + Date.now() });
+         
+         if (fetchedName) setHouseNo(fetchedName);
+         if (fetchedFloors) setFloors(fetchedFloors);
+         if (fetchedZoning) setZoning(fetchedZoning);
+      }
+      
     } catch (error) {
       console.error("Overpass error:", error);
     } finally {
