@@ -27,19 +27,26 @@ export default function Projects() {
     photoUrl: ""
   });
   const [savingProfile, setSavingProfile] = useState(false);
-  const [downloadingApk, setDownloadingApk] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
-  const handleDownloadApk = () => {
-    if (confirm("Do you want to download the Planner Pro APK?")) {
-      const blob = new Blob(["Mock APK content"], { type: "application/vnd.android.package-archive" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'PlannerPro_v1.0.apk';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleDownloadApk = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else {
+      alert("App installation is not supported on this browser, or it is already installed. On iOS Safari, tap the Share icon and select 'Add to Home Screen'.");
     }
   };
 
@@ -246,7 +253,7 @@ export default function Projects() {
         
         <div className="mt-auto p-6">
           <button onClick={handleDownloadApk} className="w-full mb-6 flex items-center justify-center gap-2 py-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-sm font-bold transition-colors">
-            <Smartphone className="w-4 h-4" /> Download APK
+            <Smartphone className="w-4 h-4" /> Install App
           </button>
           
           <div className="flex items-center gap-3 mb-6 text-sm font-medium text-slate-300">

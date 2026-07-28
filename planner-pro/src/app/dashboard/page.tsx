@@ -75,6 +75,7 @@ function DashboardContent() {
   const [builderSchema, setBuilderSchema] = useState<any[]>([]);
   const [dynamicAnswers, setDynamicAnswers] = useState<Record<string, any>>({});
   const [showShareModal, setShowShareModal] = useState(false);
+  const [currentUrl, setCurrentUrl] = useState("");
 
   const zoningCounts = surveys.reduce((acc, survey) => {
     const z = survey.answers?.zoning || 'unknown';
@@ -85,6 +86,17 @@ function DashboardContent() {
   useEffect(() => {
     if (!authLoading && !user) router.push("/");
   }, [user, authLoading, router]);
+
+  useEffect(() => {
+    setCurrentUrl(window.location.href);
+  }, []);
+
+  // Self-heal survey count for legacy projects
+  useEffect(() => {
+    if (project && project.surveyCount !== surveys.length) {
+      updateDoc(doc(db, "projects", projectId), { surveyCount: surveys.length }).catch(console.error);
+    }
+  }, [surveys.length, project, projectId]);
 
   // Fetch Project Name
   useEffect(() => {
@@ -422,7 +434,7 @@ function DashboardContent() {
           </button>
           <button 
             onClick={() => {
-              navigator.clipboard.writeText(window.location.href);
+              navigator.clipboard.writeText(currentUrl);
               setCopied(true);
               setTimeout(() => setCopied(false), 2000);
             }}
@@ -882,10 +894,10 @@ function DashboardContent() {
               <div className="text-left mb-6">
                 <label className="block text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">Project Code</label>
                 <div className="flex items-center gap-3">
-                  <div className="flex-1 bg-black/40 border border-white/10 rounded-xl p-4 text-center">
-                    <span className="text-2xl font-mono font-bold tracking-widest text-emerald-400">{projectId}</span>
+                  <div className="flex-1 bg-black/40 border border-white/10 rounded-xl p-4 text-center overflow-hidden">
+                    <span className="text-lg truncate break-all font-mono font-bold text-emerald-400 block">{projectId}</span>
                   </div>
-                  <div className="flex gap-2 h-full">
+                  <div className="flex gap-2 h-full shrink-0">
                     <button onClick={() => {
                       navigator.clipboard.writeText(projectId);
                       setCopied(true);
@@ -915,10 +927,10 @@ function DashboardContent() {
               <div className="text-left mb-8">
                 <label className="block text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">Direct Link</label>
                 <div className="flex items-center gap-3">
-                  <input type="text" readOnly value={window.location.href} className="flex-1 bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm text-slate-300 font-mono focus:outline-none" />
-                  <div className="flex gap-2">
+                  <input type="text" readOnly value={currentUrl} className="flex-1 bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm text-slate-300 font-mono focus:outline-none" />
+                  <div className="flex gap-2 shrink-0">
                     <button onClick={() => {
-                      navigator.clipboard.writeText(window.location.href);
+                      navigator.clipboard.writeText(currentUrl);
                       setCopied(true);
                       setTimeout(() => setCopied(false), 2000);
                     }} className="p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white transition-colors">
@@ -928,7 +940,7 @@ function DashboardContent() {
                       if (navigator.share) {
                         navigator.share({
                           title: 'Join my project on Planner Pro',
-                          url: window.location.href,
+                          url: currentUrl,
                         }).catch(console.error);
                       } else {
                         alert('Share not supported on this browser. Use copy instead.');
