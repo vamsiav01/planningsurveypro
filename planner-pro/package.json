@@ -6,8 +6,10 @@
     "dev": "next dev",
     "rescue": "next dev -p 4000",
     "build": "next build",
+    "build:firebase": "NEXT_OUTPUT=export next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "deploy:firebase": "npm run build:firebase && npx firebase-tools deploy --only hosting"
   },
   "dependencies": {
     "@mapbox/vector-tile": "^3.0.0",
