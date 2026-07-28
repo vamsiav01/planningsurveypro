@@ -581,38 +581,38 @@ export default function Projects() {
 
         </div>
       </main>
-    </div>
 
-    {/* Beautiful Install App Modal - shown when browser doesn't support native install prompt */}
-    {showInstallModal && (
-      <div className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setShowInstallModal(false)}>
-        <div className="bg-[#0f1729] border border-white/10 rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center" onClick={e => e.stopPropagation()}>
-          <div className="w-20 h-20 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <Smartphone className="w-10 h-10 text-emerald-400" />
-          </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Install Planner Pro</h2>
-          <p className="text-slate-400 text-sm mb-8">Install this app on your device for a native experience — works offline, opens instantly, just like a real app!</p>
-          
-          <div className="space-y-4 text-left">
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-              <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">📱 On Android (Chrome)</p>
-              <p className="text-sm text-slate-300">Tap the <span className="text-white font-bold">⋮ menu</span> at the top right → <span className="text-emerald-400 font-bold">"Add to Home Screen"</span></p>
+      {/* Beautiful Install App Modal - shown when browser doesn't support native install prompt */}
+      {showInstallModal && (
+        <div className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setShowInstallModal(false)}>
+          <div className="bg-[#0f1729] border border-white/10 rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center" onClick={e => e.stopPropagation()}>
+            <div className="w-20 h-20 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <Smartphone className="w-10 h-10 text-emerald-400" />
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-              <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">🍎 On iPhone (Safari)</p>
-              <p className="text-sm text-slate-300">Tap the <span className="text-white font-bold">Share ↑ icon</span> at the bottom → <span className="text-emerald-400 font-bold">"Add to Home Screen"</span></p>
+            <h2 className="text-2xl font-bold text-white mb-2">Install Planner Pro</h2>
+            <p className="text-slate-400 text-sm mb-8">Install this app on your device for a native experience — works offline, opens instantly, just like a real app!</p>
+            
+            <div className="space-y-4 text-left">
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">📱 On Android (Chrome)</p>
+                <p className="text-sm text-slate-300">Tap the <span className="text-white font-bold">⋮ menu</span> at the top right → <span className="text-emerald-400 font-bold">&ldquo;Add to Home Screen&rdquo;</span></p>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">🍎 On iPhone (Safari)</p>
+                <p className="text-sm text-slate-300">Tap the <span className="text-white font-bold">Share ↑ icon</span> at the bottom → <span className="text-emerald-400 font-bold">&ldquo;Add to Home Screen&rdquo;</span></p>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">💻 On Desktop (Chrome/Edge)</p>
+                <p className="text-sm text-slate-300">Look for the <span className="text-emerald-400 font-bold">Install icon ⊕</span> in the address bar on the right side</p>
+              </div>
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-              <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">💻 On Desktop (Chrome/Edge)</p>
-              <p className="text-sm text-slate-300">Look for the <span className="text-emerald-400 font-bold">Install icon ⊕</span> in the address bar on the right side</p>
-            </div>
-          </div>
 
-          <button onClick={() => setShowInstallModal(false)} className="w-full mt-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-all">
-            Got It!
-          </button>
+            <button onClick={() => setShowInstallModal(false)} className="w-full mt-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-all">
+              Got It!
+            </button>
+          </div>
         </div>
-      </div>
-    )}
+      )}
+    </div>
   );
 }
