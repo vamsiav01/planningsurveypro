@@ -28,6 +28,7 @@ export default function Projects() {
   });
   const [savingProfile, setSavingProfile] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallModal, setShowInstallModal] = useState(false);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -40,15 +41,18 @@ export default function Projects() {
 
   const handleDownloadApk = async () => {
     if (deferredPrompt) {
+      // Native browser install prompt (Android/Desktop Chrome)
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
         setDeferredPrompt(null);
       }
     } else {
-      alert("App installation is not supported on this browser, or it is already installed. On iOS Safari, tap the Share icon and select 'Add to Home Screen'.");
+      // Fallback: show a nice custom modal instead of ugly alert
+      setShowInstallModal(true);
     }
   };
+
 
   const handleResetData = async () => {
     if (confirm("Are you sure you want to reset your local data? This will clear your personal profile information.")) {
@@ -227,7 +231,7 @@ export default function Projects() {
 
   return (
     <div className="flex h-screen bg-[#0b1121] text-slate-200 overflow-hidden font-sans">
-      
+
       {/* Left Sidebar */}
       <aside className="w-64 bg-[#0b1121] border-r border-white/5 flex flex-col shrink-0">
         <div className="p-6">
@@ -237,7 +241,7 @@ export default function Projects() {
             </div>
             Planner Pro
           </div>
-          
+
           <nav className="space-y-2">
             <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${activeTab === 'dashboard' ? 'bg-white/5 text-indigo-400' : 'text-slate-400 hover:bg-white/5 hover:text-slate-300'}`}>
               <LayoutDashboard className="w-5 h-5" /> Dashboard
@@ -250,12 +254,12 @@ export default function Projects() {
             </button>
           </nav>
         </div>
-        
+
         <div className="mt-auto p-6">
           <button onClick={handleDownloadApk} className="w-full mb-6 flex items-center justify-center gap-2 py-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-sm font-bold transition-colors">
             <Smartphone className="w-4 h-4" /> Install App
           </button>
-          
+
           <div className="flex items-center gap-3 mb-6 text-sm font-medium text-slate-300">
             {profileData.photoUrl ? (
               <img src={profileData.photoUrl} alt="Profile" className="w-8 h-8 rounded-full object-cover" />
@@ -275,97 +279,97 @@ export default function Projects() {
       {/* Main Content Area */}
       <main className="flex-1 p-8 overflow-y-auto custom-scrollbar relative">
         <div className="max-w-7xl mx-auto">
-          
+
           {activeTab === 'dashboard' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 
-            
-            {/* New Project Card */}
-            <div className="bg-transparent border border-white/10 rounded-2xl p-6 flex flex-col justify-between min-h-[220px]">
-              <div>
-                <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center mb-4">
-                  <Plus className="w-5 h-5 text-indigo-400" />
-                </div>
-                <h3 className="text-lg font-bold text-white mb-4">New Project</h3>
-                <form onSubmit={handleCreateProject} className="flex flex-col gap-3">
-                  <input
-                    type="text"
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    placeholder="Enter project name..."
-                    className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                  />
-                  <button
-                    type="submit"
-                    disabled={creating || !newProjectName.trim()}
-                    className="w-full py-3 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2"
-                  >
-                    {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Project"}
-                  </button>
-                </form>
-              </div>
-            </div>
 
-            {/* Join Project Card */}
-            <div className="bg-transparent border border-white/10 rounded-2xl p-6 flex flex-col justify-between min-h-[220px]">
-              <div>
-                <div className="w-10 h-10 bg-[#c026d3]/20 rounded-xl flex items-center justify-center mb-4">
-                  <Link className="w-5 h-5 text-[#c026d3]" />
-                </div>
-                <h3 className="text-lg font-bold text-white mb-4">Join Project</h3>
-                <form onSubmit={handleJoinProject} className="flex flex-col gap-3">
-                  <input
-                    type="text"
-                    value={joinCode}
-                    onChange={(e) => setJoinCode(e.target.value)}
-                    placeholder="Enter project code..."
-                    className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#c026d3] transition-colors"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!joinCode.trim()}
-                    className="w-full py-3 bg-[#c026d3] hover:bg-[#d946ef] disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-all"
-                  >
-                    Join Team
-                  </button>
-                </form>
-              </div>
-            </div>
-
-            {/* Existing Projects */}
-            {activeProjects.map((project) => (
-              <div 
-                key={project.id}
-                onClick={() => router.push(`/dashboard?id=${project.id}`)}
-                className="bg-transparent border border-white/10 hover:border-indigo-500/50 rounded-2xl p-6 cursor-pointer group transition-all flex flex-col justify-between min-h-[220px] relative"
-              >
-                {project.ownerId === user?.uid && (
-                  <button onClick={(e) => moveToTrash(e, project.id)} className="absolute top-4 right-4 p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
+              {/* New Project Card */}
+              <div className="bg-transparent border border-white/10 rounded-2xl p-6 flex flex-col justify-between min-h-[220px]">
                 <div>
-                  <div className="w-10 h-10 mb-4 text-slate-400 group-hover:text-indigo-400 transition-colors">
-                    <Folder className="w-6 h-6" />
+                  <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center mb-4">
+                    <Plus className="w-5 h-5 text-indigo-400" />
                   </div>
-                  <h3 className="text-lg font-bold text-white uppercase tracking-wide truncate group-hover:text-indigo-400 transition-colors">
-                    {project.name}
-                  </h3>
-                </div>
-                
-                <div className="flex items-center justify-between text-xs font-medium text-slate-500 mt-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                    Updated {project.updatedAt?.toDate()?.toLocaleDateString() || 'Just now'}
-                  </div>
-                  <span className="bg-indigo-500/10 text-indigo-400 px-2 py-1 rounded">
-                    {project.surveyCount || 0} Surveys
-                  </span>
+                  <h3 className="text-lg font-bold text-white mb-4">New Project</h3>
+                  <form onSubmit={handleCreateProject} className="flex flex-col gap-3">
+                    <input
+                      type="text"
+                      value={newProjectName}
+                      onChange={(e) => setNewProjectName(e.target.value)}
+                      placeholder="Enter project name..."
+                      className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                    />
+                    <button
+                      type="submit"
+                      disabled={creating || !newProjectName.trim()}
+                      className="w-full py-3 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2"
+                    >
+                      {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Project"}
+                    </button>
+                  </form>
                 </div>
               </div>
-            ))}
-            
-          </div>
+
+              {/* Join Project Card */}
+              <div className="bg-transparent border border-white/10 rounded-2xl p-6 flex flex-col justify-between min-h-[220px]">
+                <div>
+                  <div className="w-10 h-10 bg-[#c026d3]/20 rounded-xl flex items-center justify-center mb-4">
+                    <Link className="w-5 h-5 text-[#c026d3]" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white mb-4">Join Project</h3>
+                  <form onSubmit={handleJoinProject} className="flex flex-col gap-3">
+                    <input
+                      type="text"
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value)}
+                      placeholder="Enter project code..."
+                      className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#c026d3] transition-colors"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!joinCode.trim()}
+                      className="w-full py-3 bg-[#c026d3] hover:bg-[#d946ef] disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-all"
+                    >
+                      Join Team
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* Existing Projects */}
+              {activeProjects.map((project) => (
+                <div
+                  key={project.id}
+                  onClick={() => router.push(`/dashboard?id=${project.id}`)}
+                  className="bg-transparent border border-white/10 hover:border-indigo-500/50 rounded-2xl p-6 cursor-pointer group transition-all flex flex-col justify-between min-h-[220px] relative"
+                >
+                  {project.ownerId === user?.uid && (
+                    <button onClick={(e) => moveToTrash(e, project.id)} className="absolute top-4 right-4 p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                  <div>
+                    <div className="w-10 h-10 mb-4 text-slate-400 group-hover:text-indigo-400 transition-colors">
+                      <Folder className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white uppercase tracking-wide truncate group-hover:text-indigo-400 transition-colors">
+                      {project.name}
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs font-medium text-slate-500 mt-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                      Updated {project.updatedAt?.toDate()?.toLocaleDateString() || 'Just now'}
+                    </div>
+                    <span className="bg-indigo-500/10 text-indigo-400 px-2 py-1 rounded">
+                      {project.surveyCount || 0} Surveys
+                    </span>
+                  </div>
+                </div>
+              ))}
+
+            </div>
           )}
 
           {activeTab === 'trash' && (
@@ -374,7 +378,7 @@ export default function Projects() {
                 <Trash2 className="w-6 h-6 text-red-400" /> Trash Bin
               </h2>
               <p className="text-sm text-slate-400 mb-8">Projects in the trash can be restored or permanently deleted.</p>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {trashedProjects.map((project) => (
                   <div key={project.id} className="bg-transparent border border-red-500/20 rounded-2xl p-6 flex flex-col justify-between min-h-[220px] relative">
@@ -389,7 +393,7 @@ export default function Projects() {
                         Deleted: {project.deletedAt?.toDate()?.toLocaleDateString() || 'Recently'}
                       </p>
                     </div>
-                    
+
                     <div className="flex gap-2 mt-4">
                       <button onClick={() => restoreProject(project.id)} className="flex-1 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1">
                         <RefreshCcw className="w-3 h-3" /> Restore
@@ -400,7 +404,7 @@ export default function Projects() {
                     </div>
                   </div>
                 ))}
-                
+
                 {trashedProjects.length === 0 && (
                   <div className="col-span-full py-12 text-center text-slate-500 border-2 border-dashed border-white/5 rounded-2xl">
                     Trash is empty.
@@ -412,7 +416,7 @@ export default function Projects() {
 
           {activeTab === 'profile' && (
             <div className="max-w-2xl mx-auto space-y-6">
-              
+
               {/* TOP SECTION: User Identity & Stats */}
               <div className="bg-[#121626] border border-[#1e293b] rounded-2xl p-8 shadow-xl flex flex-col items-center relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-indigo-500/20 to-transparent"></div>
@@ -432,12 +436,12 @@ export default function Projects() {
                       </div>
                     </div>
                   </label>
-                  
+
                   <h2 className="text-2xl font-bold text-white tracking-widest uppercase mb-1">
                     {profileData.fullName || user?.email?.split('@')[0] || "USER"}
                   </h2>
                   <p className="text-sm text-slate-400 mb-6 font-medium">Account ID: {user?.uid.substring(0, 16)}...</p>
-                  
+
                   <div className="flex gap-3 mb-8">
                     <span className="px-4 py-1.5 bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-bold rounded-full uppercase tracking-wider">
                       {profileData.role || 'Surveyor'}
@@ -460,7 +464,7 @@ export default function Projects() {
                   <BookOpen className="w-5 h-5 text-[#f97316]" />
                   <h3 className="text-lg font-bold text-white tracking-wide">Project Summary</h3>
                 </div>
-                
+
                 <div className="space-y-3">
                   {activeProjects.length === 0 ? (
                     <div className="text-slate-500 text-sm py-4">No ongoing projects.</div>
@@ -488,18 +492,18 @@ export default function Projects() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-[#38bdf8] uppercase tracking-wider mb-2">Full Name</label>
-                    <input type="text" value={profileData.fullName} onChange={e => setProfileData({...profileData, fullName: e.target.value})} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors" placeholder="e.g. John Doe" />
+                    <input type="text" value={profileData.fullName} onChange={e => setProfileData({ ...profileData, fullName: e.target.value })} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors" placeholder="e.g. John Doe" />
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-[#38bdf8] uppercase tracking-wider mb-2">Agency / Organization</label>
-                    <input type="text" value={profileData.agency} onChange={e => setProfileData({...profileData, agency: e.target.value})} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors" placeholder="e.g. City Planning Dept" />
+                    <input type="text" value={profileData.agency} onChange={e => setProfileData({ ...profileData, agency: e.target.value })} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors" placeholder="e.g. City Planning Dept" />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-[#38bdf8] uppercase tracking-wider mb-2">Role</label>
-                      <select value={profileData.role} onChange={e => setProfileData({...profileData, role: e.target.value})} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors appearance-none">
+                      <select value={profileData.role} onChange={e => setProfileData({ ...profileData, role: e.target.value })} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors appearance-none">
                         <option value="Surveyor">Surveyor</option>
                         <option value="Manager">Manager</option>
                         <option value="Admin">Admin</option>
@@ -507,7 +511,7 @@ export default function Projects() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-[#38bdf8] uppercase tracking-wider mb-2">Region / Zone</label>
-                      <select value={profileData.region} onChange={e => setProfileData({...profileData, region: e.target.value})} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors appearance-none">
+                      <select value={profileData.region} onChange={e => setProfileData({ ...profileData, region: e.target.value })} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors appearance-none">
                         <option value="North Zone">North Zone</option>
                         <option value="South Zone">South Zone</option>
                         <option value="East Zone">East Zone</option>
@@ -519,7 +523,7 @@ export default function Projects() {
 
                   <div>
                     <label className="block text-xs font-bold text-[#38bdf8] uppercase tracking-wider mb-2">Phone Number</label>
-                    <input type="text" value={profileData.phone} onChange={e => setProfileData({...profileData, phone: e.target.value})} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors" placeholder="+1 234 567 8900" />
+                    <input type="text" value={profileData.phone} onChange={e => setProfileData({ ...profileData, phone: e.target.value })} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors" placeholder="+1 234 567 8900" />
                   </div>
 
                   <button onClick={saveProfile} disabled={savingProfile} className="w-full mt-2 py-4 bg-[#f97316] hover:bg-[#ea580c] text-white rounded-xl text-sm font-bold tracking-wider uppercase transition-colors flex items-center justify-center gap-2">
@@ -534,7 +538,7 @@ export default function Projects() {
                   <ShieldCheck className="w-5 h-5 text-[#f97316]" />
                   <h3 className="text-lg font-bold text-white tracking-wide">Account & Backup</h3>
                 </div>
-                
+
                 <div className="bg-black/30 border border-white/5 rounded-xl p-4 flex items-center justify-between mb-4">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
@@ -547,15 +551,15 @@ export default function Projects() {
                   </div>
                   <span className="text-xs font-bold text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded uppercase tracking-widest">Connected</span>
                 </div>
-                
+
                 <div className="flex items-center gap-2 text-xs text-emerald-500 mb-6 bg-emerald-500/10 px-4 py-3 rounded-xl border border-emerald-500/20">
                   <ShieldCheck className="w-4 h-4" />
                   <span>Account active since {user?.metadata.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString() : 'recently'}</span>
                 </div>
-                
+
                 <div className="space-y-3">
                   <button onClick={handleDownloadApk} className="w-full py-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2">
-                    <Smartphone className="w-4 h-4" /> Download APK
+                    <Smartphone className="w-4 h-4" /> Install App
                   </button>
                   <button onClick={handleSyncData} className="w-full py-3 bg-transparent border border-[#f97316]/50 hover:bg-[#f97316]/10 text-[#f97316] rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2">
                     <Database className="w-4 h-4" /> Sync Data
@@ -574,9 +578,41 @@ export default function Projects() {
 
             </div>
           )}
-          
+
         </div>
       </main>
     </div>
+
+    {/* Beautiful Install App Modal - shown when browser doesn't support native install prompt */}
+    {showInstallModal && (
+      <div className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setShowInstallModal(false)}>
+        <div className="bg-[#0f1729] border border-white/10 rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center" onClick={e => e.stopPropagation()}>
+          <div className="w-20 h-20 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Smartphone className="w-10 h-10 text-emerald-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Install Planner Pro</h2>
+          <p className="text-slate-400 text-sm mb-8">Install this app on your device for a native experience — works offline, opens instantly, just like a real app!</p>
+          
+          <div className="space-y-4 text-left">
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+              <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">📱 On Android (Chrome)</p>
+              <p className="text-sm text-slate-300">Tap the <span className="text-white font-bold">⋮ menu</span> at the top right → <span className="text-emerald-400 font-bold">"Add to Home Screen"</span></p>
+            </div>
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+              <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">🍎 On iPhone (Safari)</p>
+              <p className="text-sm text-slate-300">Tap the <span className="text-white font-bold">Share ↑ icon</span> at the bottom → <span className="text-emerald-400 font-bold">"Add to Home Screen"</span></p>
+            </div>
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+              <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">💻 On Desktop (Chrome/Edge)</p>
+              <p className="text-sm text-slate-300">Look for the <span className="text-emerald-400 font-bold">Install icon ⊕</span> in the address bar on the right side</p>
+            </div>
+          </div>
+
+          <button onClick={() => setShowInstallModal(false)} className="w-full mt-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition-all">
+            Got It!
+          </button>
+        </div>
+      </div>
+    )}
   );
 }
