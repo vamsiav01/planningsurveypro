@@ -22,19 +22,22 @@ const MapWrapper = dynamic(() => import("@/components/MapWrapper"), {
 });
 
 // Helper to calculate area of polygon in square meters using Shoelace formula
-function calculatePolygonArea(coords: [number, number][]) {
+function calculatePolygonArea(coords: any[]) {
   if (coords.length < 3) return 0;
   let area = 0;
   // Convert degrees to approximate meters
   const latFactor = 111139;
-  const lngFactor = 111139 * Math.cos((coords[0][0] * Math.PI) / 180);
+  const getLat = (c: any) => Array.isArray(c) ? c[0] : c.lat;
+  const getLng = (c: any) => Array.isArray(c) ? c[1] : c.lng;
+
+  const lngFactor = 111139 * Math.cos((getLat(coords[0]) * Math.PI) / 180);
   
   for (let i = 0; i < coords.length; i++) {
     let j = (i + 1) % coords.length;
-    let xi = coords[i][1] * lngFactor;
-    let yi = coords[i][0] * latFactor;
-    let xj = coords[j][1] * lngFactor;
-    let yj = coords[j][0] * latFactor;
+    let xi = getLng(coords[i]) * lngFactor;
+    let yi = getLat(coords[i]) * latFactor;
+    let xj = getLng(coords[j]) * lngFactor;
+    let yj = getLat(coords[j]) * latFactor;
     area += xi * yj - xj * yi;
   }
   return Math.abs(area / 2);
@@ -376,7 +379,10 @@ function DashboardContent() {
       const surveyData = {
         location: activeClickLoc,
         osmData: activeFootprint ? {
-          coords: activeFootprint.coords,
+          coords: activeFootprint.coords.map((c: any) => ({ 
+            lat: Array.isArray(c) ? c[0] : c.lat, 
+            lng: Array.isArray(c) ? c[1] : c.lng 
+          })),
           tags: activeFootprint.tags,
           id: (activeFootprint as any).id || "drawn"
         } : null,
