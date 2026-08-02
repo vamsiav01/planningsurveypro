@@ -123,13 +123,19 @@ export default function Projects() {
 
   useEffect(() => {
     if (!user) return;
-    const q = fsQuery(fsCollection(db, "projects"));
+    const q = fsQuery(
+      fsCollection(db, "projects"),
+      fsWhere("members", "array-contains", user.uid)
+    );
     const unsubscribe = fsOnSnapshot(q, (snapshot) => {
       let projData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
       // Filter client-side to avoid complex Firestore index requirements
       projData = projData.filter(p => p.ownerId === user.uid || p.userId === user.uid || (p.members && p.members.includes(user.uid)) || (p.collaborators && p.collaborators.includes(user.uid)));
       projData.sort((a: any, b: any) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
       setProjects(projData);
+      setLoading(false);
+    }, (error) => {
+      console.error("Firestore query failed:", error);
       setLoading(false);
     });
     return () => unsubscribe();
