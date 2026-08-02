@@ -405,8 +405,9 @@ function DashboardContent() {
       }
       
       closeForm();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving survey:", error);
+      alert("Error saving survey: " + (error.message || error.toString()));
     } finally {
       setSaving(false);
     }
