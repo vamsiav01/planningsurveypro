@@ -981,12 +981,12 @@ function DashboardContent() {
               {surveys.map((survey, index) => (
                 <div key={survey.id} className="bg-black/20 border border-white/5 hover:border-white/10 rounded-xl p-4 transition-colors group">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-bold text-white flex items-center gap-2">
+                    <div className="text-sm font-bold text-white flex items-center gap-2">
                       <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs">
                         S{index + 1}
                       </div>
                       {survey.answers?.buildingName || survey.answers?.houseNo || "Survey"}
-                    </span>
+                    </div>
                     <span className="text-xs text-emerald-400 font-medium capitalize">
                       {survey.answers?.floors} • {survey.answers?.zoning || 'Residential'}
                     </span>
