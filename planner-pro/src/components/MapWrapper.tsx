@@ -245,7 +245,7 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onShape
           <GlobalPmtilesFetcher onMapClick={onMapClick} activeFootprintId={activeFootprint?.id} surveys={surveys} onLoading={(loading) => setIsAiLoading(loading)} />
         )}
 
-        {customLayers.filter(l => l.visible).map(layer =>
+        {(customLayers || []).map(layer =>
           (layer.features || []).map((feature: any, fi: number) => {
             const geomType = feature.geometry?.type;
             const fillColor = feature.properties?.color || layer.color || "#3b82f6";

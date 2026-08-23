@@ -559,6 +559,7 @@ function DashboardContent() {
           activeClickLoc={activeClickLoc}
           activeFootprint={activeFootprint}
           loadingFootprint={loadingFootprint}
+          customLayers={customLayers}
         />
 
         {/* Floating Glassmorphism Survey Form */}
