@@ -7,12 +7,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, orderBy, arrayUnion, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
-  Loader2, Hexagon, LayoutDashboard, Trash2, User as UserIcon, LogOut, 
+  Loader2, Hexagon, LayoutDashboard, Trash2, User as UserIcon, LogOut,
   Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft, Link, Check, Plus, GripVertical, Settings2, Lock, Share2, Copy, Pencil
 } from "lucide-react";
 
 // Safe dynamic import for Leaflet map
-const MapWrapper = dynamic(() => import("@/components/MapWrapper"), { 
+const MapWrapper = dynamic(() => import("@/components/MapWrapper"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-full flex items-center justify-center bg-[#0b1121] text-indigo-500">
@@ -36,7 +36,7 @@ function calculatePolygonArea(coords: any[]) {
   const getLng = (c: any) => Array.isArray(c) ? c[1] : c.lng;
 
   const lngFactor = 111139 * Math.cos((getLat(ring[0]) * Math.PI) / 180);
-  
+
   for (let i = 0; i < ring.length; i++) {
     let j = (i + 1) % ring.length;
     let xi = getLng(ring[i]) * lngFactor;
@@ -75,7 +75,7 @@ function DashboardContent() {
   const projectId = searchParams.get('id') || "";
   const { user, loading: authLoading, signOut } = useAuth();
   const router = useRouter();
-  
+
   const [addLayerMode, setAddLayerMode] = useState<'blank' | 'import' | null>(null);
 
   // Drawing state
@@ -85,12 +85,12 @@ function DashboardContent() {
   const [customLayers, setCustomLayers] = useState<any[]>([]);
   const [project, setProject] = useState<any>(null);
   const [surveys, setSurveys] = useState<any[]>([]);
-  
+
   // Map State
-  const [activeClickLoc, setActiveClickLoc] = useState<{lat: number, lng: number} | null>(null);
-  const [activeFootprint, setActiveFootprint] = useState<{coords: [number, number][], tags: any, id?: string | number} | null>(null);
+  const [activeClickLoc, setActiveClickLoc] = useState<{ lat: number, lng: number } | null>(null);
+  const [activeFootprint, setActiveFootprint] = useState<{ coords: [number, number][], tags: any, id?: string | number } | null>(null);
   const [loadingFootprint, setLoadingFootprint] = useState(false);
-  
+
   // Form State
   const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
   const [houseNo, setHouseNo] = useState("");
@@ -151,10 +151,10 @@ function DashboardContent() {
       // Floors filter can be exact or generalized
       const surveyFloors = String(s.answers?.floors || 'G').toLowerCase();
       const filter = filterFloors.toLowerCase();
-      if (filter === "g+4+" && (surveyFloors === "g+4" || surveyFloors === "g+4+" || parseInt(surveyFloors.replace(/\D/g,'')) >= 4)) {
-         // match
+      if (filter === "g+4+" && (surveyFloors === "g+4" || surveyFloors === "g+4+" || parseInt(surveyFloors.replace(/\D/g, '')) >= 4)) {
+        // match
       } else if (surveyFloors !== filter) {
-         match = false;
+        match = false;
       }
     }
     return match;
@@ -285,7 +285,7 @@ function DashboardContent() {
         console.error("Nominatim error:", e);
       }
     }
-    
+
     return { fetchedName, fetchedFloors, fetchedZoning };
   };
 
@@ -311,8 +311,8 @@ function DashboardContent() {
       setActiveFootprint(preFetchedFootprint);
       setLoadingFootprint(true);
       const { fetchedName, fetchedFloors, fetchedZoning } = await resolveBuildingDetails(
-        preFetchedFootprint.coords || [], 
-        preFetchedFootprint.tags || {}, 
+        preFetchedFootprint.coords || [],
+        preFetchedFootprint.tags || {},
         lat, lng
       );
       if (fetchedName) setBuildingName(fetchedName);
@@ -329,7 +329,7 @@ function DashboardContent() {
 
     setLoadingFootprint(true);
     setActiveFootprint(null);
-    
+
     try {
       const q = `
         [out:json][timeout:10];
@@ -348,28 +348,28 @@ function DashboardContent() {
         body: q
       });
       const data = await response.json();
-      
+
       let foundBuilding = null;
       let tags: any = {};
-      
+
       if (data.elements && data.elements.length > 0) {
         const ways = data.elements.filter((e: any) => e.type === 'way' && e.tags && (e.tags.building || e.tags['building:part']));
         if (ways.length > 0) {
           const way = ways[0];
           tags = way.tags;
           const coords: [number, number][] = [];
-          
+
           way.nodes.forEach((nodeId: number) => {
             const node = data.elements.find((e: any) => e.type === 'node' && e.id === nodeId);
             if (node) {
               coords.push([node.lat, node.lon]);
             }
           });
-          
+
           if (coords.length > 0) {
             foundBuilding = { coords, tags, id: way.id };
             setActiveFootprint(foundBuilding);
-            
+
             const { fetchedName, fetchedFloors, fetchedZoning } = await resolveBuildingDetails(coords, tags, lat, lng);
             if (fetchedName) setBuildingName(fetchedName);
             if (fetchedFloors) setFloors(fetchedFloors);
@@ -380,24 +380,24 @@ function DashboardContent() {
 
       // TRICK: If overpass fails to find a polygon, detect as building using a synthetic square
       if (!foundBuilding) {
-         const { fetchedName, fetchedFloors, fetchedZoning } = await resolveBuildingDetails([], {}, lat, lng);
-         
-         // Create a 10x10m square footprint trick so every building can be detected and tracked
-         const latOffset = 0.000045; // roughly 5m
-         const lngOffset = 0.000045 / Math.cos(lat * Math.PI / 180);
-         const trickCoords: [number, number][] = [
-           [lat + latOffset, lng - lngOffset],
-           [lat + latOffset, lng + lngOffset],
-           [lat - latOffset, lng + lngOffset],
-           [lat - latOffset, lng - lngOffset]
-         ];
-         setActiveFootprint({ coords: trickCoords, tags: { building: 'yes', source: 'synthetic_trick' }, id: 'generated-' + Date.now() });
-         
-         if (fetchedName) setBuildingName(fetchedName);
-         if (fetchedFloors) setFloors(fetchedFloors);
-         if (fetchedZoning) setZoning(fetchedZoning);
+        const { fetchedName, fetchedFloors, fetchedZoning } = await resolveBuildingDetails([], {}, lat, lng);
+
+        // Create a 10x10m square footprint trick so every building can be detected and tracked
+        const latOffset = 0.000045; // roughly 5m
+        const lngOffset = 0.000045 / Math.cos(lat * Math.PI / 180);
+        const trickCoords: [number, number][] = [
+          [lat + latOffset, lng - lngOffset],
+          [lat + latOffset, lng + lngOffset],
+          [lat - latOffset, lng + lngOffset],
+          [lat - latOffset, lng - lngOffset]
+        ];
+        setActiveFootprint({ coords: trickCoords, tags: { building: 'yes', source: 'synthetic_trick' }, id: 'generated-' + Date.now() });
+
+        if (fetchedName) setBuildingName(fetchedName);
+        if (fetchedFloors) setFloors(fetchedFloors);
+        if (fetchedZoning) setZoning(fetchedZoning);
       }
-      
+
     } catch (error) {
       console.error("Overpass error:", error);
     } finally {
@@ -407,7 +407,7 @@ function DashboardContent() {
 
   const handleSurveyClick = (survey: any) => {
     setSelectedSurveyId(survey.id);
-    setActiveClickLoc(survey.location || survey.loc || {lat: 0, lng: 0});
+    setActiveClickLoc(survey.location || survey.loc || { lat: 0, lng: 0 });
     if (survey.osmData) {
       setActiveFootprint(survey.osmData);
     } else {
@@ -466,15 +466,15 @@ function DashboardContent() {
   const handleSaveSurvey = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeClickLoc || !user) return;
-    
+
     setSaving(true);
     try {
       const surveyData = {
         location: activeClickLoc,
         osmData: activeFootprint ? {
-          coords: activeFootprint.coords.map((c: any) => ({ 
-            lat: Array.isArray(c) ? c[0] : c.lat, 
-            lng: Array.isArray(c) ? c[1] : c.lng 
+          coords: activeFootprint.coords.map((c: any) => ({
+            lat: Array.isArray(c) ? c[0] : c.lat,
+            lng: Array.isArray(c) ? c[1] : c.lng
           })),
           tags: activeFootprint.tags,
           id: (activeFootprint as any).id || "drawn"
@@ -502,7 +502,7 @@ function DashboardContent() {
         // Increment project survey count
         await updateDoc(doc(db, "projects", projectId), { surveyCount: increment(1) });
       }
-      
+
       closeForm();
     } catch (error: any) {
       console.error("Error saving survey:", error);
@@ -522,18 +522,18 @@ function DashboardContent() {
 
   return (
     <div className="flex h-screen bg-[#0b1121] text-slate-200 overflow-hidden font-sans">
-      
+
       {/* 1. Center Map Area & Floating Glassmorphism Modal */}
       <main className="flex-1 relative h-full">
         {/* Top bar buttons - desktop: left-16, mobile: left-2 top-2 smaller */}
         <div className="absolute top-2 left-2 lg:top-6 lg:left-16 z-[1000] flex gap-1.5 lg:gap-3">
-          <button 
+          <button
             onClick={() => router.push('/projects')}
             className="bg-slate-900/80 backdrop-blur-md border border-white/10 hover:bg-slate-800 text-white px-2.5 py-2 lg:px-4 lg:py-2.5 rounded-xl shadow-lg flex items-center gap-1.5 lg:gap-2 text-xs lg:text-sm font-medium transition-all"
           >
             <ArrowLeft className="w-3.5 h-3.5 lg:w-4 lg:h-4" /> <span className="hidden sm:inline">Back to Projects</span><span className="sm:hidden">Back</span>
           </button>
-          <button 
+          <button
             onClick={() => {
               navigator.clipboard.writeText(currentUrl);
               setCopied(true);
@@ -545,8 +545,8 @@ function DashboardContent() {
             <span className="hidden sm:inline">{copied ? "Copied!" : "Copy Invite Link"}</span>
           </button>
         </div>
-        <MapWrapper 
-          surveys={filteredSurveys} 
+        <MapWrapper
+          surveys={filteredSurveys}
           onMapClick={handleMapClick}
           onShapeDrawn={(feature: any) => {
             setPendingShape(feature);
@@ -579,7 +579,7 @@ function DashboardContent() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
               {/* Geographic Data Box */}
               <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 mb-4">
@@ -691,13 +691,13 @@ function DashboardContent() {
                       <div key={field.id} className={field.type !== 'short_answer' && field.type !== 'number' ? 'col-span-1' : ''}>
                         <label className="block text-xs font-medium text-slate-400 mb-1">{field.label}</label>
                         {field.type === 'short_answer' && (
-                          <input type="text" value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
+                          <input type="text" value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({ ...dynamicAnswers, [field.id]: e.target.value })} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
                         )}
                         {field.type === 'number' && (
-                          <input type="number" value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
+                          <input type="number" value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({ ...dynamicAnswers, [field.id]: e.target.value })} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
                         )}
                         {field.type === 'dropdown' && (
-                          <select value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none">
+                          <select value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({ ...dynamicAnswers, [field.id]: e.target.value })} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none">
                             <option value="" className="bg-slate-900">Select...</option>
                             {field.options?.split(',').map((opt: string) => opt.trim()).filter(Boolean).map((opt: string) => (
                               <option key={opt} value={opt} className="bg-slate-900">{opt}</option>
@@ -706,7 +706,7 @@ function DashboardContent() {
                         )}
                         {field.type === 'combobox' && (
                           <>
-                            <input list={`list-${field.id}`} value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" placeholder="Select or type..." />
+                            <input list={`list-${field.id}`} value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({ ...dynamicAnswers, [field.id]: e.target.value })} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" placeholder="Select or type..." />
                             <datalist id={`list-${field.id}`}>
                               {field.options?.split(',').map((opt: string) => opt.trim()).filter(Boolean).map((opt: string) => (
                                 <option key={opt} value={opt} />
@@ -720,7 +720,7 @@ function DashboardContent() {
                 )}
               </form>
             </div>
-            
+
             <div className="p-6 border-t border-white/10 bg-white/5 flex gap-3">
               {selectedSurveyId && (
                 <button
@@ -745,45 +745,45 @@ function DashboardContent() {
           </div>
         )}
 
-      {/* ===== SAVE SHAPE TO LAYER MODAL ===== */}
-      {showShapeToLayerModal && pendingShape && (
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center">
-          <div className="bg-white/5 backdrop-blur-2xl border border-white/20 rounded-3xl w-[420px] shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between p-5 border-b border-white/10">
-              <h2 className="text-white font-bold flex items-center gap-2"><Pencil className="w-5 h-5 text-amber-400" /> Save Shape to Layer</h2>
-              <button onClick={() => { setShowShapeToLayerModal(false); setPendingShape(null); }} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-6 space-y-5">
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Target Layer</label>
-                {customLayers.length === 0 ? (
-                  <p className="text-sm text-red-400 bg-red-400/10 p-3 rounded-xl border border-red-400/20">You must create a custom layer first.</p>
-                ) : (
-                  <select value={shapeTargetLayerId} onChange={e => setShapeTargetLayerId(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500">
-                    {customLayers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
-                )}
+        {/* ===== SAVE SHAPE TO LAYER MODAL ===== */}
+        {showShapeToLayerModal && pendingShape && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center">
+            <div className="bg-white/5 backdrop-blur-2xl border border-white/20 rounded-3xl w-[420px] shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between p-5 border-b border-white/10">
+                <h2 className="text-white font-bold flex items-center gap-2"><Pencil className="w-5 h-5 text-amber-400" /> Save Shape to Layer</h2>
+                <button onClick={() => { setShowShapeToLayerModal(false); setPendingShape(null); }} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Shape Name (Optional)</label>
-                <input type="text" placeholder="E.g., Park, Zone A..." value={pendingShape.properties?.name || ''} onChange={(e) => setPendingShape({...pendingShape, properties: {...pendingShape.properties, name: e.target.value}})} className="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              <div className="p-6 space-y-5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Target Layer</label>
+                  {customLayers.length === 0 ? (
+                    <p className="text-sm text-red-400 bg-red-400/10 p-3 rounded-xl border border-red-400/20">You must create a custom layer first.</p>
+                  ) : (
+                    <select value={shapeTargetLayerId} onChange={e => setShapeTargetLayerId(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500">
+                      {customLayers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Shape Name (Optional)</label>
+                  <input type="text" placeholder="E.g., Park, Zone A..." value={pendingShape.properties?.name || ''} onChange={(e) => setPendingShape({ ...pendingShape, properties: { ...pendingShape.properties, name: e.target.value } })} className="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                </div>
               </div>
-            </div>
-            <div className="p-5 border-t border-white/10 bg-white/5 flex gap-3">
-              <button onClick={() => { setShowShapeToLayerModal(false); setPendingShape(null); }} className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 font-medium rounded-xl transition-colors text-sm">Cancel</button>
-              <button disabled={customLayers.length === 0} onClick={() => {
-                setCustomLayers(customLayers.map(l => {
-                  if (l.id === shapeTargetLayerId) {
-                    return { ...l, features: [...(l.features || []), pendingShape] };
-                  }
-                  return l;
-                }));
-                setShowShapeToLayerModal(false); setPendingShape(null);
-              }} className="flex-1 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-50">Save Shape</button>
+              <div className="p-5 border-t border-white/10 bg-white/5 flex gap-3">
+                <button onClick={() => { setShowShapeToLayerModal(false); setPendingShape(null); }} className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 font-medium rounded-xl transition-colors text-sm">Cancel</button>
+                <button disabled={customLayers.length === 0} onClick={() => {
+                  setCustomLayers(customLayers.map(l => {
+                    if (l.id === shapeTargetLayerId) {
+                      return { ...l, features: [...(l.features || []), pendingShape] };
+                    }
+                    return l;
+                  }));
+                  setShowShapeToLayerModal(false); setPendingShape(null);
+                }} className="flex-1 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-50">Save Shape</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
       </main>
 
@@ -808,15 +808,15 @@ function DashboardContent() {
           {/* Map Layers (New Implementation) */}
           <div className="mb-8 bg-black/20 border border-white/5 rounded-2xl p-5">
             <h3 className="text-sm font-bold text-slate-300 tracking-wider mb-5 flex items-center gap-2 uppercase">
-              <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg> 
+              <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
               Map Layers
             </h3>
-            
+
             <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/5">
               <div className="flex items-center gap-3 text-slate-300">
                 <MapPin className="w-5 h-5 text-indigo-400" /> <span className="text-sm font-medium">Survey Data</span>
               </div>
-              <div 
+              <div
                 className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${showSurveyData ? 'bg-indigo-500' : 'bg-slate-700'}`}
                 onClick={() => setShowSurveyData(!showSurveyData)}
               >
@@ -861,14 +861,14 @@ function DashboardContent() {
 
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Custom Layers</h4>
-              <button 
+              <button
                 onClick={() => setShowAddLayerChoiceModal(true)}
                 className="text-xs bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
               >
                 <Plus className="w-3 h-3" /> Add Layer
               </button>
             </div>
-            
+
             {customLayers.length === 0 ? (
               <div className="text-xs text-slate-500 italic text-center py-4">
                 No layers. Click &quot;Add Layer&quot; to create or import one.
@@ -929,15 +929,15 @@ function DashboardContent() {
                 </div>
               </div>
             </div>
-            
+
             <div className="mt-auto pt-4">
-              <button 
+              <button
                 onClick={() => { setBuilderSchema(project?.formSchema || []); setShowFormBuilder(true); }}
                 className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white rounded-xl text-sm font-medium transition-colors"
               >
                 <Settings2 className="w-4 h-4" /> Edit Survey Form
               </button>
-              <button 
+              <button
                 onClick={() => setShowShareModal(true)}
                 className="w-full flex items-center justify-center gap-2 py-3 mt-3 bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 text-indigo-400 rounded-xl text-sm font-medium transition-colors"
               >
@@ -957,7 +957,7 @@ function DashboardContent() {
                 <span className="text-sm text-slate-400">Total Surveyed:</span>
                 <span className="text-2xl font-bold text-white leading-none">{surveys.length}</span>
               </div>
-              
+
               {Object.entries(zoningCounts).map(([zone, count]) => (
                 <div key={zone} className="flex items-center justify-between mt-3">
                   <span className="text-xs text-slate-400 capitalize flex items-center gap-2">
@@ -992,13 +992,13 @@ function DashboardContent() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2 mt-3">
-                    <button 
+                    <button
                       onClick={() => handleSurveyClick(survey)}
                       className="flex-1 bg-white/5 hover:bg-indigo-500/20 text-slate-300 hover:text-indigo-400 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
                     >
                       <Edit className="w-3.5 h-3.5" /> Edit
                     </button>
-                    <button 
+                    <button
                       onClick={() => deleteSurveyById(survey.id)}
                       className="flex-1 bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-400 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
                     >
@@ -1027,9 +1027,9 @@ function DashboardContent() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-4">
-              
+
               {/* SYSTEM FIELDS (LOCKED) */}
               <div className="bg-black/20 border border-white/5 rounded-xl p-4 opacity-70">
                 <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">
@@ -1097,7 +1097,7 @@ function DashboardContent() {
                   </div>
                 </div>
               ))}
-              
+
               <button type="button" onClick={() => {
                 setBuilderSchema([...builderSchema, { id: 'field_' + Date.now(), label: 'New Question', type: 'short_answer' }]);
               }} className="w-full py-4 border-2 border-dashed border-white/10 hover:border-indigo-500/50 hover:bg-indigo-500/5 rounded-xl text-indigo-400 font-medium flex items-center justify-center gap-2 transition-all">
@@ -1130,7 +1130,7 @@ function DashboardContent() {
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">Share Project</h2>
               <p className="text-sm text-slate-400 mb-8">Invite your team to collaborate on this project.</p>
-              
+
               <div className="text-left mb-6">
                 <label className="block text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">Project Code</label>
                 <div className="flex items-center gap-3">
@@ -1212,7 +1212,7 @@ function DashboardContent() {
               </button>
             </div>
             <div className="p-6 space-y-4">
-              <button 
+              <button
                 onClick={() => { setShowAddLayerChoiceModal(false); setShowAddLayerModal(true); }}
                 className="w-full flex items-center gap-4 p-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-colors text-left"
               >
@@ -1224,7 +1224,7 @@ function DashboardContent() {
                   <p className="text-xs text-slate-400 mt-0.5">Start fresh and draw shapes manually</p>
                 </div>
               </button>
-              
+
               <label className="w-full flex items-center gap-4 p-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-colors text-left cursor-pointer">
                 <div className="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
                   <Download className="w-5 h-5" />
