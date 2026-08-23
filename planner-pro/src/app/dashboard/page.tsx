@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, orderBy, arrayUnion, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { 
+import {
   Loader2, Hexagon, LayoutDashboard, Trash2, User as UserIcon, LogOut, 
-  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft, Link, Check, Plus, GripVertical, Settings2, Lock, Share2, Copy
+  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft, Link, Check, Plus, GripVertical, Settings2, Lock, Share2, Copy, Pencil
 } from "lucide-react";
 
 // Safe dynamic import for Leaflet map
@@ -21,26 +21,50 @@ const MapWrapper = dynamic(() => import("@/components/MapWrapper"), {
   )
 });
 
-// Helper to calculate area of polygon in square meters using Shoelace formula
+function getOuterRing(coords: any[]): any[] {
+  let c = coords;
+  while (c.length > 0 && Array.isArray(c[0]) && typeof c[0][0] !== 'number') { c = c[0]; }
+  return c;
+}
+
 function calculatePolygonArea(coords: any[]) {
-  if (coords.length < 3) return 0;
+  const ring = getOuterRing(coords);
+  if (!ring || ring.length < 3) return 0;
   let area = 0;
-  // Convert degrees to approximate meters
   const latFactor = 111139;
   const getLat = (c: any) => Array.isArray(c) ? c[0] : c.lat;
   const getLng = (c: any) => Array.isArray(c) ? c[1] : c.lng;
 
-  const lngFactor = 111139 * Math.cos((getLat(coords[0]) * Math.PI) / 180);
+  const lngFactor = 111139 * Math.cos((getLat(ring[0]) * Math.PI) / 180);
   
-  for (let i = 0; i < coords.length; i++) {
-    let j = (i + 1) % coords.length;
-    let xi = getLng(coords[i]) * lngFactor;
-    let yi = getLat(coords[i]) * latFactor;
-    let xj = getLng(coords[j]) * lngFactor;
-    let yj = getLat(coords[j]) * latFactor;
+  for (let i = 0; i < ring.length; i++) {
+    let j = (i + 1) % ring.length;
+    let xi = getLng(ring[i]) * lngFactor;
+    let yi = getLat(ring[i]) * latFactor;
+    let xj = getLng(ring[j]) * lngFactor;
+    let yj = getLat(ring[j]) * latFactor;
     area += xi * yj - xj * yi;
   }
   return Math.abs(area / 2);
+}
+
+function calculatePolygonPerimeter(coords: any[]) {
+  const ring = getOuterRing(coords);
+  if (!ring || ring.length < 2) return 0;
+  let perim = 0;
+  const latFactor = 111139;
+  const getLat = (c: any) => Array.isArray(c) ? c[0] : c.lat;
+  const getLng = (c: any) => Array.isArray(c) ? c[1] : c.lng;
+
+  const lngFactor = 111139 * Math.cos((getLat(ring[0]) * Math.PI) / 180);
+
+  for (let i = 0; i < ring.length; i++) {
+    let j = (i + 1) % ring.length;
+    let dx = (getLng(ring[j]) - getLng(ring[i])) * lngFactor;
+    let dy = (getLat(ring[j]) - getLat(ring[i])) * latFactor;
+    perim += Math.sqrt(dx * dx + dy * dy);
+  }
+  return perim;
 }
 
 import { useSearchParams } from "next/navigation";
@@ -52,6 +76,13 @@ function DashboardContent() {
   const { user, loading: authLoading, signOut } = useAuth();
   const router = useRouter();
   
+  const [addLayerMode, setAddLayerMode] = useState<'blank' | 'import' | null>(null);
+
+  // Drawing state
+  const [pendingShape, setPendingShape] = useState<any>(null);
+  const [shapeTargetLayerId, setShapeTargetLayerId] = useState<string>("");
+  const [showShapeToLayerModal, setShowShapeToLayerModal] = useState(false);
+  const [customLayers, setCustomLayers] = useState<any[]>([]);
   const [project, setProject] = useState<any>(null);
   const [surveys, setSurveys] = useState<any[]>([]);
   
@@ -76,15 +107,83 @@ function DashboardContent() {
   // Dynamic Builder State
   const [showFormBuilder, setShowFormBuilder] = useState(false);
   const [builderSchema, setBuilderSchema] = useState<any[]>([]);
-  const [dynamicAnswers, setDynamicAnswers] = useState<Record<string, any>>({});
+  const [dynamicAnswers, setDynamicAnswers] = useState<Record<string, any>>({}); // UI State
   const [showShareModal, setShowShareModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [currentUrl, setCurrentUrl] = useState("");
 
-  const zoningCounts = surveys.reduce((acc, survey) => {
-    const z = survey.answers?.zoning || 'unknown';
+  // Map Layer Filters
+  const [showSurveyData, setShowSurveyData] = useState(true);
+  const [filterZoning, setFilterZoning] = useState("All");
+  const [filterCondition, setFilterCondition] = useState("All");
+  const [filterFloors, setFilterFloors] = useState("All");
+  const [showAddLayerChoiceModal, setShowAddLayerChoiceModal] = useState(false);
+  const [showAddLayerModal, setShowAddLayerModal] = useState(false);
+  const [newLayerName, setNewLayerName] = useState("");
+  const [newLayerColor, setNewLayerColor] = useState("#3b82f6");
+
+  // Mobile UI State
+  const [mobileTab, setMobileTab] = useState<'map' | 'layers' | 'analytics' | 'surveys'>('map');
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+  const [mobileFormExpanded, setMobileFormExpanded] = useState(false);
+
+  // Process dynamic dashboard stats
+  const zoningCounts = surveys.reduce((acc, s) => {
+    const z = s.answers?.zoning || 'residential';
     acc[z] = (acc[z] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
+
+  const filteredSurveys = showSurveyData ? surveys.filter(s => {
+    let match = true;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const bn = String(s.answers?.buildingName || "").toLowerCase();
+      const hn = String(s.answers?.houseNo || "").toLowerCase();
+      if (!bn.includes(q) && !hn.includes(q)) match = false;
+    }
+    if (filterZoning !== "All") {
+      if (String(s.answers?.zoning || 'residential').toLowerCase() !== filterZoning.toLowerCase()) match = false;
+    }
+    if (filterCondition !== "All") {
+      if (String(s.answers?.condition || 'good').toLowerCase() !== filterCondition.toLowerCase()) match = false;
+    }
+    if (filterFloors !== "All") {
+      // Floors filter can be exact or generalized
+      const surveyFloors = String(s.answers?.floors || 'G').toLowerCase();
+      const filter = filterFloors.toLowerCase();
+      if (filter === "g+4+" && (surveyFloors === "g+4" || surveyFloors === "g+4+" || parseInt(surveyFloors.replace(/\D/g,'')) >= 4)) {
+         // match
+      } else if (surveyFloors !== filter) {
+         match = false;
+      }
+    }
+    return match;
+  }) : [];
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const parsed = JSON.parse(content);
+        const features = Array.isArray(parsed.features) ? parsed.features : [parsed];
+        const newLayer = {
+          id: 'imported-' + Date.now(),
+          name: file.name.replace('.geojson', ''),
+          color: '#10b981',
+          features: features
+        };
+        setCustomLayers([...customLayers, newLayer]);
+        setShowAddLayerChoiceModal(false);
+      } catch (err) {
+        alert("Failed to parse GeoJSON file.");
+      }
+    };
+    reader.readAsText(file);
+  };
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/");
@@ -191,6 +290,8 @@ function DashboardContent() {
     return { fetchedName, fetchedFloors, fetchedZoning };
   };
 
+  const lastFootprintClickRef = useRef<number>(0);
+
   const handleMapClick = async (lat: number, lng: number, preFetchedFootprint?: any) => {
     // Reset edit mode when clicking a new spot
     setSelectedSurveyId(null);
@@ -207,6 +308,7 @@ function DashboardContent() {
     setActiveClickLoc({ lat, lng });
 
     if (preFetchedFootprint) {
+      lastFootprintClickRef.current = Date.now();
       setActiveFootprint(preFetchedFootprint);
       setLoadingFootprint(true);
       const { fetchedName, fetchedFloors, fetchedZoning } = await resolveBuildingDetails(
@@ -218,6 +320,11 @@ function DashboardContent() {
       if (fetchedFloors) setFloors(fetchedFloors);
       if (fetchedZoning) setZoning(fetchedZoning);
       setLoadingFootprint(false);
+      return;
+    }
+
+    if (Date.now() - lastFootprintClickRef.current < 200) {
+      // Ignore background map click that bubbled up from the polygon click
       return;
     }
 
@@ -296,19 +403,6 @@ function DashboardContent() {
       console.error("Overpass error:", error);
     } finally {
       setLoadingFootprint(false);
-    }
-  };
-
-  const handleDrawCreate = (layer: any) => {
-    setSelectedSurveyId(null);
-    if (typeof layer.getLatLngs === 'function') {
-      const latlngs = layer.getLatLngs()[0];
-      const coords = latlngs.map((ll: any) => [ll.lat, ll.lng]);
-      setActiveFootprint({ coords, tags: {} });
-      setActiveClickLoc({ lat: coords[0][0], lng: coords[0][1] });
-    } else if (typeof layer.getLatLng === 'function') {
-      const ll = layer.getLatLng();
-      setActiveClickLoc({ lat: ll.lat, lng: ll.lng });
     }
   };
 
@@ -432,12 +526,13 @@ function DashboardContent() {
       
       {/* 1. Center Map Area & Floating Glassmorphism Modal */}
       <main className="flex-1 relative h-full">
-        <div className="absolute top-6 left-16 z-[1000] flex gap-3">
+        {/* Top bar buttons - desktop: left-16, mobile: left-2 top-2 smaller */}
+        <div className="absolute top-2 left-2 lg:top-6 lg:left-16 z-[1000] flex gap-1.5 lg:gap-3">
           <button 
             onClick={() => router.push('/projects')}
-            className="bg-slate-900/80 backdrop-blur-md border border-white/10 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-sm font-medium transition-all"
+            className="bg-slate-900/80 backdrop-blur-md border border-white/10 hover:bg-slate-800 text-white px-2.5 py-2 lg:px-4 lg:py-2.5 rounded-xl shadow-lg flex items-center gap-1.5 lg:gap-2 text-xs lg:text-sm font-medium transition-all"
           >
-            <ArrowLeft className="w-4 h-4" /> Back to Projects
+            <ArrowLeft className="w-3.5 h-3.5 lg:w-4 lg:h-4" /> <span className="hidden sm:inline">Back to Projects</span><span className="sm:hidden">Back</span>
           </button>
           <button 
             onClick={() => {
@@ -445,202 +540,245 @@ function DashboardContent() {
               setCopied(true);
               setTimeout(() => setCopied(false), 2000);
             }}
-            className="bg-indigo-600/90 backdrop-blur-md border border-indigo-400/30 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-sm font-medium transition-all"
+            className="bg-indigo-600/90 backdrop-blur-md border border-indigo-400/30 hover:bg-indigo-500 text-white px-2.5 py-2 lg:px-4 lg:py-2.5 rounded-xl shadow-lg flex items-center gap-1.5 lg:gap-2 text-xs lg:text-sm font-medium transition-all"
           >
-            {copied ? <Check className="w-4 h-4" /> : <Link className="w-4 h-4" />}
-            {copied ? "Copied!" : "Copy Invite Link"}
+            {copied ? <Check className="w-3.5 h-3.5 lg:w-4 lg:h-4" /> : <Link className="w-3.5 h-3.5 lg:w-4 lg:h-4" />}
+            <span className="hidden sm:inline">{copied ? "Copied!" : "Copy Invite Link"}</span>
           </button>
         </div>
         <MapWrapper 
-          surveys={surveys} 
+          surveys={filteredSurveys} 
           onMapClick={handleMapClick}
-          onDrawCreate={handleDrawCreate}
+          onShapeDrawn={(feature: any) => {
+            setPendingShape(feature);
+            if (customLayers.length > 0) {
+              setShapeTargetLayerId(customLayers[0].id);
+            }
+            setShowShapeToLayerModal(true);
+          }}
           onSurveyClick={handleSurveyClick}
           activeClickLoc={activeClickLoc}
           activeFootprint={activeFootprint}
           loadingFootprint={loadingFootprint}
         />
 
-        {/* Floating Glassmorphism Survey Form */}
+        {/* ===== SURVEY FORM — Desktop: floating panel | Mobile: peek/expand bottom sheet ===== */}
         {activeClickLoc && (
-          <div className="absolute top-8 right-8 w-[400px] bg-white/5 backdrop-blur-2xl border border-white/20 rounded-3xl shadow-2xl shadow-black/50 z-[1000] overflow-hidden flex flex-col max-h-[calc(100vh-64px)]">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-indigo-400" /> {selectedSurveyId ? "Edit Survey Data" : "New Survey Data"}
-              </h2>
-              <button onClick={closeForm} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
+          <>
+            {/* DESKTOP VERSION — untouched floating panel */}
+            <div className="hidden lg:flex absolute top-8 right-8 w-[400px] bg-white/5 backdrop-blur-2xl border border-white/20 rounded-3xl shadow-2xl shadow-black/50 z-[1000] overflow-hidden flex-col max-h-[calc(100vh-64px)]">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-indigo-400" /> {selectedSurveyId ? "Edit Survey Data" : "New Survey Data"}
+                </h2>
+                <button onClick={closeForm} className="text-slate-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 mb-4">
+                  <h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-2"><MapPin className="w-4 h-4" /> Geographical Location</h3>
+                  <div className="text-sm text-emerald-100/70 space-y-1 font-mono">
+                    <p>Lat: {activeClickLoc.lat.toFixed(6)}</p><p>Lng: {activeClickLoc.lng.toFixed(6)}</p>
+                    {activeFootprint && (<><p className="mt-2 text-emerald-200">Area: ~{Math.round(calculatePolygonArea(activeFootprint.coords))} sq meters</p><p>Perimeter: ~{Math.round(calculatePolygonPerimeter(activeFootprint.coords))} meters</p></>)}
+                  </div>
+                </div>
+                {activeFootprint ? (
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-6"><h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-2">Building Boundary Selected</h3><div className="text-sm text-blue-100/70 font-mono"><p>Source ID: {(activeFootprint as any).id || "Manual Draw"}</p></div></div>
+                ) : (
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-6"><p className="text-xs text-amber-300">No footprint detected by OSM. Use the <strong>Draw Tools</strong> (Left) to trace the building!</p></div>
+                )}
+                <form id="survey-form-desktop" onSubmit={handleSaveSurvey} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-xs font-medium text-slate-400 mb-1">House No. / Block</label><input type="text" value={houseNo} onChange={(e) => setHouseNo(e.target.value)} placeholder="e.g. 101" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" /></div>
+                    <div><label className="block text-xs font-medium text-slate-400 mb-1">Building Name</label><input type="text" value={buildingName} onChange={(e) => setBuildingName(e.target.value)} placeholder="e.g. Landmark Towers" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" /></div>
+                  </div>
+                  <div><label className="block text-xs font-medium text-slate-400 mb-1">Floors</label><select value={floors} onChange={(e) => setFloors(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none"><option value="G" className="bg-slate-900">G (Ground Only)</option><option value="G+1" className="bg-slate-900">G+1</option><option value="G+2" className="bg-slate-900">G+2</option><option value="G+3" className="bg-slate-900">G+3</option><option value="G+4+" className="bg-slate-900">G+4 or higher</option></select></div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-xs font-medium text-slate-400 mb-1">Land Use / Zoning</label><select value={zoning} onChange={(e) => setZoning(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none"><option value="residential" className="bg-slate-900">Residential</option><option value="commercial" className="bg-slate-900">Commercial</option><option value="mixed" className="bg-slate-900">Mixed Use</option><option value="public" className="bg-slate-900">Public/Govt</option><option value="industrial" className="bg-slate-900">Industrial</option></select></div>
+                    <div><label className="block text-xs font-medium text-slate-400 mb-1">Condition</label><select value={condition} onChange={(e) => setCondition(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none"><option value="good" className="bg-slate-900">Good</option><option value="fair" className="bg-slate-900">Fair / Average</option><option value="dilapidated" className="bg-slate-900">Dilapidated</option></select></div>
+                  </div>
+                  <div><label className="block text-xs font-medium text-slate-400 mb-1">Road Access</label><select value={roadAccess} onChange={(e) => setRoadAccess(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none"><option value="paved" className="bg-slate-900">Paved Road</option><option value="unpaved" className="bg-slate-900">Unpaved / Kutcha</option><option value="none" className="bg-slate-900">No Direct Access</option></select></div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-xs font-medium text-slate-400 mb-1">Occupants</label><input type="number" value={occupants} onChange={(e) => setOccupants(e.target.value)} placeholder="Estimated" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" /></div>
+                    <div><label className="block text-xs font-medium text-slate-400 mb-1">Year Built</label><input type="number" value={yearBuilt} onChange={(e) => setYearBuilt(e.target.value)} placeholder="e.g. 2010" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" /></div>
+                  </div>
+                  {project?.formSchema?.length > 0 && (<div className="pt-4 mt-4 border-t border-white/10 space-y-4"><h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2"><Settings2 className="w-4 h-4" /> Custom Fields</h3>{project.formSchema.map((field: any) => (<div key={field.id}><label className="block text-xs font-medium text-slate-400 mb-1">{field.label}</label>{field.type === 'short_answer' && (<input type="text" value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-black/10 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all" />)}{field.type === 'number' && (<input type="number" value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-black/10 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all" />)}{field.type === 'dropdown' && (<select value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-black/10 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all appearance-none"><option value="" className="bg-slate-900">Select...</option>{field.options?.split(',').map((opt: string) => opt.trim()).filter(Boolean).map((opt: string) => (<option key={opt} value={opt} className="bg-slate-900">{opt}</option>))}</select>)}</div>))}</div>)}
+                </form>
+              </div>
+              <div className="p-6 border-t border-white/10 bg-white/5 flex gap-3">
+                {selectedSurveyId && (<button type="button" onClick={handleDeleteSurvey} disabled={saving} className="px-4 py-3 bg-red-500/20 hover:bg-red-500/40 text-red-400 font-semibold rounded-xl transition-all flex items-center justify-center"><Trash className="w-5 h-5" /></button>)}
+                <button type="submit" form="survey-form-desktop" disabled={saving} className="flex-1 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2">
+                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                  {saving ? "Saving..." : selectedSurveyId ? "Update Survey" : "Save Survey"}
+                </button>
+              </div>
             </div>
-            
-            <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
-              {/* Geographic Data Box */}
-              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 mb-4">
-                <h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                  <MapPin className="w-4 h-4" /> Geographical Location
-                </h3>
-                <div className="text-sm text-emerald-100/70 space-y-1 font-mono">
-                  <p>Lat: {activeClickLoc.lat.toFixed(6)}</p>
-                  <p>Lng: {activeClickLoc.lng.toFixed(6)}</p>
-                  {activeFootprint && (
-                    <>
-                      <p className="mt-2 text-emerald-200">Area: ~{calculatePolygonArea(activeFootprint.coords)} sq meters</p>
-                      <p>Perimeter: ~{Math.floor(activeFootprint.coords.length * 15)} meters</p>
-                    </>
+
+            {/* MOBILE VERSION — Smart Peek / Expand Bottom Sheet */}
+            <div className={`lg:hidden fixed left-0 right-0 bottom-16 z-[1000] transition-all duration-300 ease-in-out ${mobileFormExpanded ? 'top-[20%]' : 'top-[62%]'}`}>
+              <div className="h-full bg-[#0f1729]/95 backdrop-blur-2xl border-t border-white/15 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden">
+                
+                {/* Drag Handle + Peek Strip — always visible */}
+                <div
+                  className="cursor-pointer flex-shrink-0"
+                  onClick={() => setMobileFormExpanded(!mobileFormExpanded)}
+                >
+                  {/* Pull handle */}
+                  <div className="flex justify-center pt-2.5 pb-1">
+                    <div className="w-10 h-1 bg-white/25 rounded-full" />
+                  </div>
+
+                  {/* Peek Summary Row */}
+                  <div className="px-4 py-2.5 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-2 h-2 rounded-full animate-pulse ${activeFootprint ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                      <span className="text-sm font-bold text-white">
+                        {selectedSurveyId ? 'Edit Survey' : 'New Survey'}
+                      </span>
+                      {buildingName && <span className="text-xs text-slate-400 truncate max-w-[100px]">— {buildingName}</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {activeFootprint && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                            ~{Math.round(calculatePolygonArea(activeFootprint.coords))}m²
+                          </span>
+                          <span className="text-[10px] font-bold bg-blue-500/15 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full">
+                            ~{Math.round(calculatePolygonPerimeter(activeFootprint.coords))}m
+                          </span>
+                        </div>
+                      )}
+                      <div className={`text-slate-400 transition-transform duration-300 ${mobileFormExpanded ? 'rotate-180' : ''}`}>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); closeForm(); setMobileFormExpanded(false); }}
+                        className="text-slate-500 hover:text-white p-1"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Scrollable form body — only rendered when expanded */}
+                <div className={`flex-1 overflow-y-auto custom-scrollbar transition-all duration-300 ${mobileFormExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                  <div className="px-4 pt-1 pb-2">
+                    {/* Compact geo info row */}
+                    <div className="flex items-center gap-2 mb-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <div className="text-xs text-emerald-300/80 font-mono leading-relaxed">
+                        <span>{activeClickLoc.lat.toFixed(5)}, {activeClickLoc.lng.toFixed(5)}</span>
+                        {activeFootprint && <span className="ml-2 text-emerald-200">· {Math.round(calculatePolygonArea(activeFootprint.coords))}m² · {Math.round(calculatePolygonPerimeter(activeFootprint.coords))}m perimeter</span>}
+                      </div>
+                    </div>
+
+                    {!activeFootprint && (
+                      <div className="mb-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                        <p className="text-xs text-amber-300">No OSM footprint found. Use Draw Tools (top-left) to trace manually.</p>
+                      </div>
+                    )}
+
+                    <form id="survey-form" onSubmit={handleSaveSurvey} className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div><label className="block text-xs font-medium text-slate-400 mb-1">House No.</label><input type="text" value={houseNo} onChange={(e) => setHouseNo(e.target.value)} placeholder="e.g. 101" className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all" /></div>
+                        <div><label className="block text-xs font-medium text-slate-400 mb-1">Building Name</label><input type="text" value={buildingName} onChange={(e) => setBuildingName(e.target.value)} placeholder="e.g. Landmark" className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all" /></div>
+                      </div>
+                      <div><label className="block text-xs font-medium text-slate-400 mb-1">Floors</label><select value={floors} onChange={(e) => setFloors(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all appearance-none"><option value="G" className="bg-slate-900">G (Ground Only)</option><option value="G+1" className="bg-slate-900">G+1</option><option value="G+2" className="bg-slate-900">G+2</option><option value="G+3" className="bg-slate-900">G+3</option><option value="G+4+" className="bg-slate-900">G+4 or higher</option></select></div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div><label className="block text-xs font-medium text-slate-400 mb-1">Zoning</label><select value={zoning} onChange={(e) => setZoning(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all appearance-none"><option value="residential" className="bg-slate-900">Residential</option><option value="commercial" className="bg-slate-900">Commercial</option><option value="mixed" className="bg-slate-900">Mixed Use</option><option value="public" className="bg-slate-900">Public/Govt</option><option value="industrial" className="bg-slate-900">Industrial</option></select></div>
+                        <div><label className="block text-xs font-medium text-slate-400 mb-1">Condition</label><select value={condition} onChange={(e) => setCondition(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all appearance-none"><option value="good" className="bg-slate-900">Good</option><option value="fair" className="bg-slate-900">Fair</option><option value="dilapidated" className="bg-slate-900">Dilapidated</option></select></div>
+                      </div>
+                      <div><label className="block text-xs font-medium text-slate-400 mb-1">Road Access</label><select value={roadAccess} onChange={(e) => setRoadAccess(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all appearance-none"><option value="paved" className="bg-slate-900">Paved Road</option><option value="unpaved" className="bg-slate-900">Unpaved / Kutcha</option><option value="none" className="bg-slate-900">No Direct Access</option></select></div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div><label className="block text-xs font-medium text-slate-400 mb-1">Occupants</label><input type="number" value={occupants} onChange={(e) => setOccupants(e.target.value)} placeholder="Estimated" className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all" /></div>
+                        <div><label className="block text-xs font-medium text-slate-400 mb-1">Year Built</label><input type="number" value={yearBuilt} onChange={(e) => setYearBuilt(e.target.value)} placeholder="e.g. 2010" className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all" /></div>
+                      </div>
+                      {project?.formSchema?.length > 0 && (
+                        <div className="pt-3 mt-2 border-t border-white/10 space-y-3">
+                          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2"><Settings2 className="w-3.5 h-3.5" /> Custom Fields</h3>
+                          {project.formSchema.map((field: any) => (
+                            <div key={field.id}>
+                              <label className="block text-xs font-medium text-slate-400 mb-1">{field.label}</label>
+                              {field.type === 'short_answer' && (<input type="text" value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all" />)}
+                              {field.type === 'number' && (<input type="number" value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all" />)}
+                              {field.type === 'dropdown' && (<select value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all appearance-none"><option value="">Select...</option>{field.options?.split(',').map((opt: string) => opt.trim()).filter(Boolean).map((opt: string) => (<option key={opt} value={opt} className="bg-slate-900">{opt}</option>))}</select>)}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </form>
+                  </div>
+                </div>
+
+                {/* Action buttons — always visible at bottom */}
+                <div className="flex-shrink-0 px-4 py-3 border-t border-white/10 bg-[#0f1729]/80 flex gap-3">
+                  {selectedSurveyId && (
+                    <button type="button" onClick={handleDeleteSurvey} disabled={saving} className="px-4 py-3 bg-red-500/20 hover:bg-red-500/40 text-red-400 font-semibold rounded-xl transition-all flex items-center justify-center">
+                      <Trash className="w-4 h-4" />
+                    </button>
                   )}
+                  <button
+                    type="submit"
+                    form="survey-form"
+                    disabled={saving}
+                    className="flex-1 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2"
+                    onClick={() => { if (!mobileFormExpanded) setMobileFormExpanded(true); }}
+                  >
+                    {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                    {saving ? "Saving..." : selectedSurveyId ? "Update Survey" : "Save Survey"}
+                  </button>
                 </div>
               </div>
-
-              {/* OSM Data Box */}
-              {activeFootprint ? (
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-6">
-                  <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-2">
-                    Building Boundary Selected
-                  </h3>
-                  <div className="text-sm text-blue-100/70 font-mono">
-                    <p>Source ID: {(activeFootprint as any).id || "Manual Draw"}</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-6">
-                  <p className="text-xs text-amber-300">
-                    No footprint detected by OSM. Use the <strong>Draw Tools</strong> (Left) to trace the building!
-                  </p>
-                </div>
-              )}
-
-              {/* Input Form */}
-              <form id="survey-form" onSubmit={handleSaveSurvey} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">House No. / Block</label>
-                    <input type="text" value={houseNo} onChange={(e) => setHouseNo(e.target.value)} placeholder="e.g. 101" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Building Name</label>
-                    <input type="text" value={buildingName} onChange={(e) => setBuildingName(e.target.value)} placeholder="e.g. Landmark Towers" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Floors</label>
-                  <select value={floors} onChange={(e) => setFloors(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none">
-                    <option value="G" className="bg-slate-900">G (Ground Only)</option>
-                    <option value="G+1" className="bg-slate-900">G+1 (2 Floors)</option>
-                    <option value="G+2" className="bg-slate-900">G+2 (3 Floors)</option>
-                    <option value="G+3" className="bg-slate-900">G+3 (4 Floors)</option>
-                    <option value="G+4+" className="bg-slate-900">G+4 or higher</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Land Use / Zoning</label>
-                    <select value={zoning} onChange={(e) => setZoning(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none">
-                      <option value="residential" className="bg-slate-900">Residential</option>
-                      <option value="commercial" className="bg-slate-900">Commercial</option>
-                      <option value="mixed" className="bg-slate-900">Mixed Use</option>
-                      <option value="public" className="bg-slate-900">Public/Govt</option>
-                      <option value="industrial" className="bg-slate-900">Industrial</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Condition</label>
-                    <select value={condition} onChange={(e) => setCondition(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none">
-                      <option value="good" className="bg-slate-900">Good</option>
-                      <option value="fair" className="bg-slate-900">Fair / Average</option>
-                      <option value="dilapidated" className="bg-slate-900">Dilapidated</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Road Access</label>
-                  <select value={roadAccess} onChange={(e) => setRoadAccess(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none">
-                    <option value="paved" className="bg-slate-900">Paved Road</option>
-                    <option value="unpaved" className="bg-slate-900">Unpaved / Kutcha</option>
-                    <option value="none" className="bg-slate-900">No Direct Access</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Occupants</label>
-                    <input type="number" value={occupants} onChange={(e) => setOccupants(e.target.value)} placeholder="Estimated" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Year Built</label>
-                    <input type="number" value={yearBuilt} onChange={(e) => setYearBuilt(e.target.value)} placeholder="e.g. 2010" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
-                  </div>
-                </div>
-
-                {/* Dynamic Custom Fields */}
-                {project?.formSchema?.length > 0 && (
-                  <div className="pt-4 mt-4 border-t border-white/10 space-y-4">
-                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                      <Settings2 className="w-4 h-4" /> Custom Fields
-                    </h3>
-                    {project.formSchema.map((field: any) => (
-                      <div key={field.id} className={field.type !== 'short_answer' && field.type !== 'number' ? 'col-span-1' : ''}>
-                        <label className="block text-xs font-medium text-slate-400 mb-1">{field.label}</label>
-                        {field.type === 'short_answer' && (
-                          <input type="text" value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
-                        )}
-                        {field.type === 'number' && (
-                          <input type="number" value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
-                        )}
-                        {field.type === 'dropdown' && (
-                          <select value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none">
-                            <option value="" className="bg-slate-900">Select...</option>
-                            {field.options?.split(',').map((opt: string) => opt.trim()).filter(Boolean).map((opt: string) => (
-                              <option key={opt} value={opt} className="bg-slate-900">{opt}</option>
-                            ))}
-                          </select>
-                        )}
-                        {field.type === 'combobox' && (
-                          <>
-                            <input list={`list-${field.id}`} value={dynamicAnswers[field.id] || ""} onChange={(e) => setDynamicAnswers({...dynamicAnswers, [field.id]: e.target.value})} className="w-full bg-black/10 backdrop-blur border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" placeholder="Select or type..." />
-                            <datalist id={`list-${field.id}`}>
-                              {field.options?.split(',').map((opt: string) => opt.trim()).filter(Boolean).map((opt: string) => (
-                                <option key={opt} value={opt} />
-                              ))}
-                            </datalist>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </form>
             </div>
-            
-            <div className="p-6 border-t border-white/10 bg-white/5 flex gap-3">
-              {selectedSurveyId && (
-                <button
-                  type="button"
-                  onClick={handleDeleteSurvey}
-                  disabled={saving}
-                  className="px-4 py-3 bg-red-500/20 hover:bg-red-500/40 text-red-400 font-semibold rounded-xl transition-all flex items-center justify-center"
-                >
-                  <Trash className="w-5 h-5" />
-                </button>
-              )}
-              <button
-                type="submit"
-                form="survey-form"
-                disabled={saving}
-                className="flex-1 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2"
-              >
-                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                {saving ? "Saving..." : selectedSurveyId ? "Update Survey" : "Save Survey"}
-              </button>
+          </>
+        )}
+
+      {/* ===== SAVE SHAPE TO LAYER MODAL ===== */}
+      {showShapeToLayerModal && pendingShape && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center">
+          <div className="bg-white/5 backdrop-blur-2xl border border-white/20 rounded-3xl w-[420px] shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-5 border-b border-white/10">
+              <h2 className="text-white font-bold flex items-center gap-2"><Pencil className="w-5 h-5 text-amber-400" /> Save Shape to Layer</h2>
+              <button onClick={() => { setShowShapeToLayerModal(false); setPendingShape(null); }} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Target Layer</label>
+                {customLayers.length === 0 ? (
+                  <p className="text-sm text-red-400 bg-red-400/10 p-3 rounded-xl border border-red-400/20">You must create a custom layer first.</p>
+                ) : (
+                  <select value={shapeTargetLayerId} onChange={e => setShapeTargetLayerId(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500">
+                    {customLayers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Shape Name (Optional)</label>
+                <input type="text" placeholder="E.g., Park, Zone A..." value={pendingShape.properties?.name || ''} onChange={(e) => setPendingShape({...pendingShape, properties: {...pendingShape.properties, name: e.target.value}})} className="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              </div>
+            </div>
+            <div className="p-5 border-t border-white/10 bg-white/5 flex gap-3">
+              <button onClick={() => { setShowShapeToLayerModal(false); setPendingShape(null); }} className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 font-medium rounded-xl transition-colors text-sm">Cancel</button>
+              <button disabled={customLayers.length === 0} onClick={() => {
+                setCustomLayers(customLayers.map(l => {
+                  if (l.id === shapeTargetLayerId) {
+                    return { ...l, features: [...(l.features || []), pendingShape] };
+                  }
+                  return l;
+                }));
+                setShowShapeToLayerModal(false); setPendingShape(null);
+              }} className="flex-1 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-50">Save Shape</button>
             </div>
           </div>
-        )}
+        </div>
+      )}
+
       </main>
 
-      {/* 3. Right Analytics & Tools Sidebar */}
-      <aside className="w-[300px] bg-[#0f172a] border-l border-white/5 flex flex-col shrink-0 z-20 shadow-[-10px_0_30px_-15px_rgba(0,0,0,0.5)]">
+      {/* 3. Right Analytics & Tools Sidebar — hidden on mobile, shown on lg+ */}
+      <aside className="hidden lg:flex w-[300px] bg-[#0f172a] border-l border-white/5 flex-col shrink-0 z-20 shadow-[-10px_0_30px_-15px_rgba(0,0,0,0.5)]">
         {/* Project Header */}
         <div className="p-6 border-b border-white/5">
           <div className="flex items-center gap-3 mb-2">
@@ -657,6 +795,91 @@ function DashboardContent() {
         </div>
 
         <div className="p-6 overflow-y-auto custom-scrollbar">
+          {/* Map Layers (New Implementation) */}
+          <div className="mb-8 bg-black/20 border border-white/5 rounded-2xl p-5">
+            <h3 className="text-sm font-bold text-slate-300 tracking-wider mb-5 flex items-center gap-2 uppercase">
+              <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg> 
+              Map Layers
+            </h3>
+            
+            <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/5">
+              <div className="flex items-center gap-3 text-slate-300">
+                <MapPin className="w-5 h-5 text-indigo-400" /> <span className="text-sm font-medium">Survey Data</span>
+              </div>
+              <div 
+                className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${showSurveyData ? 'bg-indigo-500' : 'bg-slate-700'}`}
+                onClick={() => setShowSurveyData(!showSurveyData)}
+              >
+                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${showSurveyData ? 'left-7' : 'left-1'}`} />
+              </div>
+            </div>
+
+            {showSurveyData && (
+              <div className="grid grid-cols-2 gap-3 mb-6 pb-6 border-b border-white/5">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">ZONING</label>
+                  <select value={filterZoning} onChange={e => setFilterZoning(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg py-2 px-3 text-sm text-slate-300 focus:outline-none focus:border-indigo-500">
+                    <option value="All">All Zoning</option>
+                    <option value="residential">Residential</option>
+                    <option value="commercial">Commercial</option>
+                    <option value="industrial">Industrial</option>
+                    <option value="public">Public</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">CONDITION</label>
+                  <select value={filterCondition} onChange={e => setFilterCondition(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg py-2 px-3 text-sm text-slate-300 focus:outline-none focus:border-indigo-500">
+                    <option value="All">All</option>
+                    <option value="good">Good</option>
+                    <option value="fair">Fair</option>
+                    <option value="dilapidated">Dilapidated</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">FLOORS</label>
+                  <select value={filterFloors} onChange={e => setFilterFloors(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg py-2 px-3 text-sm text-slate-300 focus:outline-none focus:border-indigo-500">
+                    <option value="All">All</option>
+                    <option value="g">G</option>
+                    <option value="g+1">G+1</option>
+                    <option value="g+2">G+2</option>
+                    <option value="g+3">G+3</option>
+                    <option value="g+4+">G+4+</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Custom Layers</h4>
+              <button 
+                onClick={() => setShowAddLayerChoiceModal(true)}
+                className="text-xs bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+              >
+                <Plus className="w-3 h-3" /> Add Layer
+              </button>
+            </div>
+            
+            {customLayers.length === 0 ? (
+              <div className="text-xs text-slate-500 italic text-center py-4">
+                No layers. Click "Add Layer" to create or import one.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {customLayers.map(layer => (
+                  <div key={layer.id} className="flex items-center justify-between bg-white/5 p-2 rounded-lg border border-white/5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: layer.color || '#3b82f6' }} />
+                      <span className="text-sm font-medium text-slate-300">{layer.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-slate-500">
+                      <span className="text-xs mr-2">{layer.features?.length || 0} features</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Action Buttons */}
           <div className="space-y-3 mb-8">
             <button className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
@@ -781,8 +1004,8 @@ function DashboardContent() {
 
       {/* Form Builder Modal */}
       {showFormBuilder && (
-        <div className="absolute inset-0 bg-black/10 backdrop-blur-sm z-[2000] flex items-center justify-center">
-          <div className="bg-white/5 backdrop-blur-3xl border border-white/20 rounded-3xl w-[600px] shadow-2xl shadow-black/50 overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000] flex items-end lg:items-center justify-center">
+          <div className="bg-white/5 backdrop-blur-3xl border border-white/20 rounded-t-3xl lg:rounded-3xl w-full lg:w-[600px] shadow-2xl shadow-black/50 overflow-hidden flex flex-col max-h-[90vh] lg:max-h-[85vh]">
             <div className="flex items-center justify-between p-6 border-b border-white/10">
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -889,8 +1112,8 @@ function DashboardContent() {
 
       {/* Share Project Modal */}
       {showShareModal && (
-        <div className="absolute inset-0 bg-black/10 backdrop-blur-sm z-[3000] flex items-center justify-center">
-          <div className="bg-white/5 backdrop-blur-3xl border border-white/20 rounded-3xl w-[500px] shadow-2xl shadow-black/50 overflow-hidden">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-end lg:items-center justify-center">
+          <div className="bg-white/5 backdrop-blur-3xl border border-white/20 rounded-t-3xl lg:rounded-3xl w-full lg:w-[500px] shadow-2xl shadow-black/50 overflow-hidden">
             <div className="p-8 text-center relative">
               <div className="w-16 h-16 bg-indigo-500/20 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <Share2 className="w-8 h-8" />
@@ -966,6 +1189,247 @@ function DashboardContent() {
           </div>
         </div>
       )}
+      {/* Add Layer Choice Modal */}
+      {showAddLayerChoiceModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-end lg:items-center justify-center">
+          <div className="bg-white/5 backdrop-blur-3xl border border-white/20 rounded-t-3xl lg:rounded-3xl w-full lg:w-[400px] shadow-2xl shadow-black/50 overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-white/10">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Plus className="w-5 h-5 text-indigo-400" /> Add New Layer
+              </h2>
+              <button onClick={() => setShowAddLayerChoiceModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <button 
+                onClick={() => { setShowAddLayerChoiceModal(false); setShowAddLayerModal(true); }}
+                className="w-full flex items-center gap-4 p-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                  <Edit className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Create Blank Layer</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Start fresh and draw shapes manually</p>
+                </div>
+              </button>
+              
+              <label className="w-full flex items-center gap-4 p-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-colors text-left cursor-pointer">
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                  <Download className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Upload from Device</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Import GeoJSON or KML files</p>
+                </div>
+                <input type="file" accept=".geojson,.json,.kml" className="hidden" onChange={handleFileUpload} />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Blank Layer Modal */}
+      {showAddLayerModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-end lg:items-center justify-center">
+          <div className="bg-white/5 backdrop-blur-3xl border border-white/20 rounded-t-3xl lg:rounded-3xl w-full lg:w-[400px] shadow-2xl shadow-black/50 overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-white/10">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Plus className="w-5 h-5 text-indigo-400" /> Create Blank Layer
+              </h2>
+              <button onClick={() => setShowAddLayerModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Layer Name</label>
+                <input type="text" value={newLayerName} onChange={e => setNewLayerName(e.target.value)} placeholder="e.g. Trees, Roads" className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Layer Color</label>
+                <div className="flex items-center gap-3">
+                  <input type="color" value={newLayerColor} onChange={e => setNewLayerColor(e.target.value)} className="w-10 h-10 rounded-xl cursor-pointer bg-transparent border-0 p-0" />
+                  <span className="text-sm font-mono text-slate-300">{newLayerColor}</span>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowAddLayerModal(false)} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-sm font-medium transition-colors">Cancel</button>
+                <button onClick={() => {
+                  if (!newLayerName.trim()) return;
+                  setCustomLayers([...customLayers, { id: 'layer_' + Date.now(), name: newLayerName, color: newLayerColor, features: [] }]);
+                  setNewLayerName("");
+                  setShowAddLayerModal(false);
+                }} className="flex-1 py-3 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl text-sm font-medium transition-colors">Create Layer</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== MOBILE UI ===================== */}
+      {/* Mobile Bottom Navigation Bar — only visible on mobile */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-[2000] bg-[#0f172a]/95 backdrop-blur-xl border-t border-white/10 flex items-stretch h-16">
+        {([
+          { id: 'map' as const, label: 'Map', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg> },
+          { id: 'layers' as const, label: 'Layers', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg> },
+          { id: 'analytics' as const, label: 'Analytics', icon: <BarChart2 className="w-5 h-5" /> },
+          { id: 'surveys' as const, label: 'Surveys', icon: <Building className="w-5 h-5" /> },
+        ]).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => {
+              setMobileTab(tab.id);
+              setShowMobileSidebar(tab.id !== 'map');
+            }}
+            className={`flex-1 relative flex flex-col items-center justify-center gap-0.5 transition-colors ${mobileTab === tab.id && tab.id !== 'map' ? 'text-indigo-400' : 'text-slate-500'}`}
+          >
+            {tab.icon}
+            <span className="text-[10px] font-medium">{tab.label}</span>
+            {mobileTab === tab.id && tab.id !== 'map' && (
+              <div className="absolute bottom-0 w-8 h-0.5 bg-indigo-400 rounded-t-full" />
+            )}
+          </button>
+        ))}
+      </nav>
+
+      {/* Mobile Slide-Up Drawer */}
+      {showMobileSidebar && (
+        <div className="lg:hidden fixed inset-0 z-[1500]" onClick={() => setShowMobileSidebar(false)}>
+          <div
+            className="absolute bottom-16 left-0 right-0 bg-[#0f172a] border-t border-white/10 rounded-t-3xl shadow-2xl overflow-y-auto"
+            style={{ maxHeight: '75vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-[#0f172a]">
+              <div className="w-10 h-1 bg-white/20 rounded-full" />
+            </div>
+
+            {/* LAYERS TAB */}
+            {mobileTab === 'layers' && (
+              <div className="p-5">
+                <h2 className="text-sm font-bold text-white uppercase tracking-widest mb-5 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                  Map Layers
+                </h2>
+                <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/5">
+                  <div className="flex items-center gap-3 text-slate-300"><MapPin className="w-5 h-5 text-indigo-400" /> <span className="text-sm font-medium">Survey Data</span></div>
+                  <div className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${showSurveyData ? 'bg-indigo-500' : 'bg-slate-700'}`} onClick={() => setShowSurveyData(!showSurveyData)}>
+                    <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${showSurveyData ? 'left-7' : 'left-1'}`} />
+                  </div>
+                </div>
+                {showSurveyData && (
+                  <div className="grid grid-cols-2 gap-3 mb-5 pb-5 border-b border-white/5">
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-slate-400 mb-1">ZONING</label>
+                      <select value={filterZoning} onChange={e => setFilterZoning(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg py-2.5 px-3 text-sm text-slate-300 focus:outline-none">
+                        <option value="All">All Zoning</option><option value="residential">Residential</option><option value="commercial">Commercial</option><option value="industrial">Industrial</option><option value="public">Public</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-400 mb-1">CONDITION</label>
+                      <select value={filterCondition} onChange={e => setFilterCondition(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg py-2.5 px-3 text-sm text-slate-300 focus:outline-none">
+                        <option value="All">All</option><option value="good">Good</option><option value="fair">Fair</option><option value="dilapidated">Dilapidated</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-400 mb-1">FLOORS</label>
+                      <select value={filterFloors} onChange={e => setFilterFloors(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg py-2.5 px-3 text-sm text-slate-300 focus:outline-none">
+                        <option value="All">All</option><option value="g">G</option><option value="g+1">G+1</option><option value="g+2">G+2</option><option value="g+3">G+3</option><option value="g+4+">G+4+</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Custom Layers</h4>
+                  <button onClick={() => setShowAddLayerChoiceModal(true)} className="text-xs bg-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-lg flex items-center gap-1"><Plus className="w-3 h-3" /> Add Layer</button>
+                </div>
+                {customLayers.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic text-center py-4">No layers. Tap &quot;Add Layer&quot;.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {customLayers.map(layer => (
+                      <div key={layer.id} className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: layer.color || '#3b82f6' }} /><span className="text-sm font-medium text-slate-300">{layer.name}</span></div>
+                        <span className="text-xs text-slate-500">{layer.features?.length || 0} features</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ANALYTICS TAB */}
+            {mobileTab === 'analytics' && (
+              <div className="p-5">
+                <h2 className="text-sm font-bold text-white uppercase tracking-widest mb-5 flex items-center gap-2"><BarChart2 className="w-4 h-4 text-indigo-400" /> Project Analytics</h2>
+                <div className="bg-black/20 border border-white/5 rounded-2xl p-5 mb-4">
+                  <p className="text-sm text-slate-400 mb-1">Project</p>
+                  <h3 className="text-base font-bold text-white mb-4">{project?.name || 'Loading...'}</h3>
+                  <div className="flex items-end justify-between border-b border-white/5 pb-4 mb-4">
+                    <span className="text-sm text-slate-400">Total Surveyed:</span>
+                    <span className="text-3xl font-bold text-white">{surveys.length}</span>
+                  </div>
+                  {Object.entries(zoningCounts).map(([zone, count]) => (
+                    <div key={zone} className="flex items-center justify-between mt-3">
+                      <span className="text-xs text-slate-400 capitalize flex items-center gap-2"><Building className="w-3.5 h-3.5 text-indigo-400/70" /> {zone}</span>
+                      <span className="text-sm font-semibold text-white">{String(count)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button onClick={() => { setBuilderSchema(project?.formSchema || []); setShowFormBuilder(true); setShowMobileSidebar(false); }} className="flex flex-col items-center justify-center gap-2 py-4 bg-white/5 border border-white/5 rounded-2xl text-slate-300 transition-colors">
+                    <Settings2 className="w-5 h-5 text-indigo-400" /><span className="text-xs font-medium">Edit Form</span>
+                  </button>
+                  <button onClick={() => { setShowShareModal(true); setShowMobileSidebar(false); }} className="flex flex-col items-center justify-center gap-2 py-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400 transition-colors">
+                    <Share2 className="w-5 h-5" /><span className="text-xs font-medium">Share</span>
+                  </button>
+                  <button className="col-span-2 flex items-center justify-center gap-2 py-3 bg-indigo-500 hover:bg-indigo-400 text-white rounded-2xl text-sm font-medium transition-colors">
+                    <Printer className="w-4 h-4" /> Print Map Layout
+                  </button>
+                  <button className="col-span-2 flex items-center justify-center gap-2 py-3 bg-transparent border border-white/10 hover:bg-white/5 text-slate-300 rounded-2xl text-sm font-medium transition-colors">
+                    <Download className="w-4 h-4" /> Export Project Data
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* SURVEYS TAB */}
+            {mobileTab === 'surveys' && (
+              <div className="p-5">
+                <h2 className="text-sm font-bold text-white uppercase tracking-widest mb-5 flex items-center gap-2"><Building className="w-4 h-4 text-indigo-400" /> Saved Surveys</h2>
+                {surveys.length === 0 ? (
+                  <div className="text-sm text-slate-500 italic text-center py-8 bg-black/10 rounded-xl border border-white/5">No surveys yet. Tap the map to add one!</div>
+                ) : (
+                  <div className="space-y-3">
+                    {surveys.map((survey, index) => (
+                      <div key={survey.id} className="bg-black/20 border border-white/5 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-bold text-white flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs">S{index + 1}</div>
+                            {survey.answers?.buildingName || survey.answers?.houseNo || 'Survey'}
+                          </span>
+                          <span className="text-xs text-emerald-400 font-medium">{survey.answers?.floors} • {survey.answers?.zoning || 'Residential'}</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => { handleSurveyClick(survey); setShowMobileSidebar(false); setMobileTab('map'); }} className="flex-1 bg-white/5 hover:bg-indigo-500/20 text-slate-300 hover:text-indigo-400 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5">
+                            <Edit className="w-3.5 h-3.5" /> Edit
+                          </button>
+                          <button onClick={() => deleteSurveyById(survey.id)} className="flex-1 bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-400 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5">
+                            <Trash className="w-3.5 h-3.5" /> Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {/* ===================== END MOBILE UI ===================== */}
 
     </div>
   );

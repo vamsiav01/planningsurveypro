@@ -238,13 +238,11 @@ export default function Projects() {
   return (
     <div className="flex h-screen bg-[#0b1121] text-slate-200 overflow-hidden font-sans">
 
-      {/* Left Sidebar */}
-      <aside className="w-64 bg-[#0b1121] border-r border-white/5 flex flex-col shrink-0">
+      {/* Left Sidebar — hidden on mobile, shown on lg+ */}
+      <aside className="hidden lg:flex w-64 bg-[#0b1121] border-r border-white/5 flex-col shrink-0">
         <div className="p-6">
           <div className="flex items-center gap-3 font-bold text-lg text-white mb-8">
-            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-              <Hexagon className="w-5 h-5 text-white" />
-            </div>
+            <img src="/icon-512.png" alt="Planner Pro" className="w-8 h-8 rounded-lg" />
             Planner Pro
           </div>
 
@@ -283,11 +281,28 @@ export default function Projects() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 p-8 overflow-y-auto custom-scrollbar relative">
+      <main className="flex-1 p-4 lg:p-8 pb-24 lg:pb-8 overflow-y-auto custom-scrollbar relative">
+
+        {/* Mobile Header — only shown on mobile */}
+        <div className="lg:hidden flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2.5 font-bold text-white">
+            <img src="/icon-512.png" alt="Planner Pro" className="w-8 h-8 rounded-lg" />
+            <span className="text-base">Planner Pro</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={handleDownloadApk} className="flex items-center gap-1.5 py-2 px-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-bold transition-colors">
+              <Smartphone className="w-3.5 h-3.5" /> Install
+            </button>
+            <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
+              {user?.email?.charAt(0).toUpperCase() || 'U'}
+            </div>
+          </div>
+        </div>
+
         <div className="max-w-7xl mx-auto">
 
           {activeTab === 'dashboard' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
 
 
               {/* New Project Card */}
@@ -385,7 +400,7 @@ export default function Projects() {
               </h2>
               <p className="text-sm text-slate-400 mb-8">Projects in the trash can be restored or permanently deleted.</p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
                 {trashedProjects.map((project) => (
                   <div key={project.id} className="bg-transparent border border-red-500/20 rounded-2xl p-6 flex flex-col justify-between min-h-[220px] relative">
                     <div>
@@ -588,7 +603,26 @@ export default function Projects() {
         </div>
       </main>
 
-      {/* Beautiful Install App Modal - shown when browser doesn't support native install prompt */}
+      {/* Mobile Bottom Nav — only on mobile */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0b1121]/95 backdrop-blur-xl border-t border-white/10 flex items-stretch h-16">
+        <button onClick={() => setActiveTab('dashboard')} className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${activeTab === 'dashboard' ? 'text-indigo-400' : 'text-slate-500'}`}>
+          <LayoutDashboard className="w-5 h-5" />
+          <span className="text-[10px] font-medium">Dashboard</span>
+          {activeTab === 'dashboard' && <div className="absolute bottom-0 w-8 h-0.5 bg-indigo-400 rounded-t-full" />}
+        </button>
+        <button onClick={() => setActiveTab('trash')} className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${activeTab === 'trash' ? 'text-indigo-400' : 'text-slate-500'}`}>
+          <Trash2 className="w-5 h-5" />
+          <span className="text-[10px] font-medium">Trash</span>
+          {activeTab === 'trash' && <div className="absolute bottom-0 w-8 h-0.5 bg-indigo-400 rounded-t-full" />}
+        </button>
+        <button onClick={() => setActiveTab('profile')} className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${activeTab === 'profile' ? 'text-indigo-400' : 'text-slate-500'}`}>
+          <UserIcon className="w-5 h-5" />
+          <span className="text-[10px] font-medium">Profile</span>
+          {activeTab === 'profile' && <div className="absolute bottom-0 w-8 h-0.5 bg-indigo-400 rounded-t-full" />}
+        </button>
+      </nav>
+
+      {/* Beautiful Install App Modal */}
       {showInstallModal && (
         <div className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setShowInstallModal(false)}>
           <div className="bg-[#0f1729] border border-white/10 rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center" onClick={e => e.stopPropagation()}>

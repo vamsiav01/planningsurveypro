@@ -7,8 +7,18 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Planning Survey Pro",
-  description: "Geographic Survey App",
+  description: "Collaborative city planning and building survey tool",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: "/icon-192.png",
+  },
 };
 
 export default function RootLayout({
