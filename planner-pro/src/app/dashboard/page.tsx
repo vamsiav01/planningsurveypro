@@ -871,7 +871,7 @@ function DashboardContent() {
             
             {customLayers.length === 0 ? (
               <div className="text-xs text-slate-500 italic text-center py-4">
-                No layers. Click "Add Layer" to create or import one.
+                No layers. Click &quot;Add Layer&quot; to create or import one.
               </div>
             ) : (
               <div className="space-y-2">
