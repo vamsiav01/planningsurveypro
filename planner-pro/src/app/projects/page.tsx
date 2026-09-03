@@ -236,10 +236,10 @@ export default function Projects() {
   }
 
   return (
-    <div className="flex h-screen bg-[#0b1121] text-slate-200 overflow-hidden font-sans">
+    <div className="flex flex-col md:flex-row h-screen bg-[#0b1121] text-slate-200 overflow-hidden font-sans">
 
-      {/* Left Sidebar */}
-      <aside className="w-64 bg-[#0b1121] border-r border-white/5 flex flex-col shrink-0">
+      {/* Left Sidebar (Desktop Only) */}
+      <aside className="hidden md:flex w-64 bg-[#0b1121] border-r border-white/5 flex-col shrink-0">
         <div className="p-6">
           <div className="flex items-center gap-3 font-bold text-lg text-white mb-8">
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
@@ -283,7 +283,7 @@ export default function Projects() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 p-8 overflow-y-auto custom-scrollbar relative">
+      <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto custom-scrollbar relative w-full">
         <div className="max-w-7xl mx-auto">
 
           {activeTab === 'dashboard' && (
@@ -443,12 +443,12 @@ export default function Projects() {
                     </div>
                   </label>
 
-                  <h2 className="text-2xl font-bold text-white tracking-widest uppercase mb-1">
+                  <h2 className="text-2xl font-bold text-white tracking-widest uppercase mb-1 text-center">
                     {profileData.fullName || user?.email?.split('@')[0] || "USER"}
                   </h2>
-                  <p className="text-sm text-slate-400 mb-6 font-medium">Account ID: {user?.uid.substring(0, 16)}...</p>
+                  <p className="text-sm text-slate-400 mb-6 font-medium text-center">Account ID: {user?.uid.substring(0, 16)}...</p>
 
-                  <div className="flex gap-3 mb-8">
+                  <div className="flex flex-wrap justify-center gap-3 mb-8">
                     <span className="px-4 py-1.5 bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-bold rounded-full uppercase tracking-wider">
                       {profileData.role || 'Surveyor'}
                     </span>
@@ -478,10 +478,10 @@ export default function Projects() {
                     activeProjects.map((proj, idx) => (
                       <div key={proj.id} className="flex items-center justify-between p-4 bg-black/20 border border-white/5 rounded-xl hover:border-indigo-500/30 transition-colors cursor-pointer" onClick={() => router.push(`/dashboard?id=${proj.id}`)}>
                         <div className="flex items-center gap-3">
-                          <div className={`w-2 h-2 rounded-full ${idx % 3 === 0 ? 'bg-emerald-400' : idx % 3 === 1 ? 'bg-[#c026d3]' : 'bg-blue-400'}`}></div>
-                          <span className="text-sm font-semibold text-slate-300">{proj.name}</span>
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${idx % 3 === 0 ? 'bg-emerald-400' : idx % 3 === 1 ? 'bg-[#c026d3]' : 'bg-blue-400'}`}></div>
+                          <span className="text-sm font-semibold text-slate-300 truncate">{proj.name}</span>
                         </div>
-                        <span className="text-xs font-bold text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded">{proj.surveyCount || 0} Surveys</span>
+                        <span className="text-xs font-bold text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded shrink-0">{proj.surveyCount || 0} Surveys</span>
                       </div>
                     ))
                   )}
@@ -506,7 +506,7 @@ export default function Projects() {
                     <input type="text" value={profileData.agency} onChange={e => setProfileData({ ...profileData, agency: e.target.value })} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors" placeholder="e.g. City Planning Dept" />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-[#38bdf8] uppercase tracking-wider mb-2">Role</label>
                       <select value={profileData.role} onChange={e => setProfileData({ ...profileData, role: e.target.value })} className="w-full bg-[#0b1121] border border-[#1e293b] rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-[#38bdf8] transition-colors appearance-none">
@@ -587,6 +587,31 @@ export default function Projects() {
 
         </div>
       </main>
+
+      {/* ===================== MOBILE BOTTOM NAVIGATION ===================== */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0b1121]/95 backdrop-blur-xl border-t border-white/10 z-[100] px-6 py-4 flex items-center justify-between pb-safe">
+        <button 
+          onClick={() => setActiveTab('dashboard')} 
+          className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'dashboard' ? 'text-indigo-400' : 'text-slate-500'}`}
+        >
+          <LayoutDashboard className="w-6 h-6" />
+          <span className="text-[10px] font-bold tracking-widest uppercase">Projects</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('trash')} 
+          className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'trash' ? 'text-red-400' : 'text-slate-500'}`}
+        >
+          <Trash2 className="w-6 h-6" />
+          <span className="text-[10px] font-bold tracking-widest uppercase">Trash</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('profile')} 
+          className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'profile' ? 'text-emerald-400' : 'text-slate-500'}`}
+        >
+          <UserIcon className="w-6 h-6" />
+          <span className="text-[10px] font-bold tracking-widest uppercase">Profile</span>
+        </button>
+      </div>
 
       {/* Beautiful Install App Modal - shown when browser doesn't support native install prompt */}
       {showInstallModal && (

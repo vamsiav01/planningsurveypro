@@ -63,13 +63,13 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#0b1121] flex items-center justify-center p-4 text-slate-200">
-      <div className="w-full max-w-md bg-[#111827] rounded-2xl p-10 shadow-2xl border border-white/5">
+      <div className="w-full max-w-md bg-[#111827] rounded-2xl p-6 sm:p-10 shadow-2xl border border-white/5 mx-4">
         <div className="flex flex-col items-center mb-8">
           <div className="flex justify-center mb-4">
             <Hexagon size={48} className="text-slate-200 stroke-[1.5]" />
           </div>
-          <h1 className="text-2xl font-semibold text-white text-center mb-1">Planning Survey Pro</h1>
-          <p className="text-slate-400 text-sm text-center">Welcome back to the field</p>
+          <h1 className="text-xl sm:text-2xl font-semibold text-white text-center mb-1">Planning Survey Pro</h1>
+          <p className="text-slate-400 text-xs sm:text-sm text-center">Welcome back to the field</p>
         </div>
 
         <button
