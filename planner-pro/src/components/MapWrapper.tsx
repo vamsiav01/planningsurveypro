@@ -32,6 +32,7 @@ interface MapWrapperProps {
   show3DBuildings?: boolean;
   showHeatmap?: boolean;
   customLayers?: any[];
+  mapBounds?: any;
 }
 
 function SearchControl() {
@@ -202,7 +203,19 @@ function GlobalPmtilesFetcher({ onMapClick, activeFootprintId, surveys, onLoadin
   );
 }
 
-export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onShapeDrawn, onShapeClick, activeClickLoc, activeFootprint, loadingFootprint, show3DBuildings = true, showHeatmap = false, customLayers = [] }: MapWrapperProps) {
+function BoundsHandler({ bounds }: { bounds: any }) {
+  const map = useMap();
+  useEffect(() => {
+    if (bounds) {
+      try {
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 18 });
+      } catch (e) {}
+    }
+  }, [bounds, map]);
+  return null;
+}
+
+export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onShapeDrawn, onShapeClick, activeClickLoc, activeFootprint, loadingFootprint, show3DBuildings = true, showHeatmap = false, customLayers = [], mapBounds = null }: MapWrapperProps) {
   const [mounted, setMounted] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(true);
   useEffect(() => { setMounted(true); }, []);
@@ -211,6 +224,7 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onShape
   return (
     <div className="w-full h-full relative z-0 bg-[#0b1121]">
       <MapContainer center={[23.25, 77.40]} zoom={15} style={{ height: "100%", width: "100%", zIndex: 1 }} zoomControl={true} preferCanvas={false} scrollWheelZoom={true} dragging={true} doubleClickZoom={true}>
+        <BoundsHandler bounds={mapBounds} />
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="Satellite (Esri)">
             <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution="Tiles &copy; Esri" maxZoom={19} />

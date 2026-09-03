@@ -8,7 +8,7 @@ import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc,
 import { db } from "@/lib/firebase";
 import {
   Loader2, Hexagon, LayoutDashboard, Trash2, User as UserIcon, LogOut,
-  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft, Link, Check, Plus, GripVertical, Settings2, Lock, Share2, Copy, Pencil, MoreVertical
+  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft, Link, Check, Plus, GripVertical, Settings2, Lock, Share2, Copy, Pencil, MoreVertical, ZoomIn, Palette, EyeOff
 } from "lucide-react";
 
 // Safe dynamic import for Leaflet map
@@ -125,6 +125,8 @@ function DashboardContent() {
   const [newLayerName, setNewLayerName] = useState("");
   const [newLayerColor, setNewLayerColor] = useState("#3b82f6");
   const [activeLayerMenuId, setActiveLayerMenuId] = useState<string | null>(null);
+  const [mapBounds, setMapBounds] = useState<any>(null);
+  const [hiddenLayers, setHiddenLayers] = useState<string[]>([]);
 
   // Mobile UI State
   const [mobileTab, setMobileTab] = useState<'map' | 'layers' | 'analytics' | 'surveys'>('map');
@@ -937,10 +939,17 @@ function DashboardContent() {
             ) : (
               <div className="space-y-2">
                 {customLayers.map(layer => (
-                  <div key={layer.id} className="flex items-center justify-between bg-white/5 p-2 rounded-lg border border-white/5 relative">
+                  <div 
+                    key={layer.id} 
+                    className="flex items-center justify-between bg-white/5 p-2 rounded-lg border border-white/5 relative cursor-context-menu hover:bg-white/10 transition-colors"
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setActiveLayerMenuId(activeLayerMenuId === layer.id ? null : layer.id);
+                    }}
+                  >
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: layer.color || '#3b82f6' }} />
-                      <span className="text-sm font-medium text-slate-300">{layer.name}</span>
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: layer.color || '#3b82f6', opacity: hiddenLayers.includes(layer.id) ? 0.3 : 1 }} />
+                      <span className={`text-sm font-medium ${hiddenLayers.includes(layer.id) ? 'text-slate-500 line-through' : 'text-slate-300'}`}>{layer.name}</span>
                     </div>
                     <div className="flex items-center gap-1 text-slate-500">
                       <span className="text-xs mr-2">{layer.features?.length || 0} features</span>
@@ -949,7 +958,61 @@ function DashboardContent() {
                       </button>
                     </div>
                     {activeLayerMenuId === layer.id && (
-                      <div className="absolute top-10 right-2 w-48 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[100]">
+                      <div className="absolute top-10 right-2 w-56 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[100]">
+                        <button onClick={() => {
+                          if (layer.features && layer.features.length > 0) {
+                             let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+                             layer.features.forEach((f: any) => {
+                               if (f.geometry?.type === "Polygon" || f.geometry?.type === "MultiPolygon" || f.geometry?.type === "LineString") {
+                                  const processCoords = (arr: any) => {
+                                    if (arr.length === 2 && typeof arr[0] === 'number') {
+                                      minLng = Math.min(minLng, arr[0]); maxLng = Math.max(maxLng, arr[0]);
+                                      minLat = Math.min(minLat, arr[1]); maxLat = Math.max(maxLat, arr[1]);
+                                    } else {
+                                      arr.forEach((a: any) => { if (Array.isArray(a)) processCoords(a); });
+                                    }
+                                  };
+                                  processCoords(f.geometry.coordinates);
+                               } else if (f.geometry?.type === "Point") {
+                                  minLng = Math.min(minLng, f.geometry.coordinates[0]); maxLng = Math.max(maxLng, f.geometry.coordinates[0]);
+                                  minLat = Math.min(minLat, f.geometry.coordinates[1]); maxLat = Math.max(maxLat, f.geometry.coordinates[1]);
+                               }
+                             });
+                             if (minLat <= maxLat && minLng <= maxLng) {
+                               setMapBounds([[minLat, minLng], [maxLat, maxLng]]);
+                             }
+                          }
+                          setActiveLayerMenuId(null);
+                        }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
+                          <ZoomIn className="w-4 h-4 text-indigo-400" /> Zoom to Layer(s)
+                        </button>
+                        
+                        <button onClick={() => {
+                          if (hiddenLayers.includes(layer.id)) {
+                             setHiddenLayers(hiddenLayers.filter(id => id !== layer.id));
+                          } else {
+                             setHiddenLayers([...hiddenLayers, layer.id]);
+                          }
+                          setActiveLayerMenuId(null);
+                        }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
+                          {hiddenLayers.includes(layer.id) ? <Eye className="w-4 h-4 text-emerald-400" /> : <EyeOff className="w-4 h-4 text-slate-500" />} {hiddenLayers.includes(layer.id) ? "Show Layer" : "Hide Layer"}
+                        </button>
+
+                        <button onClick={() => {
+                          const geojson = { type: "FeatureCollection", features: layer.features || [] };
+                          const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement("a");
+                          link.href = url;
+                          link.download = `${layer.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.geojson`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          setActiveLayerMenuId(null);
+                        }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3 border-b border-white/5">
+                          <Download className="w-4 h-4 text-emerald-400" /> Export Layer
+                        </button>
+
                         <button onClick={() => {
                           const newName = prompt("Enter new layer name:", layer.name);
                           if (newName) updateDoc(doc(db, "projects", projectId as string, "layers", layer.id), { name: newName });
@@ -957,6 +1020,17 @@ function DashboardContent() {
                         }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
                           <Pencil className="w-4 h-4" /> Rename Layer
                         </button>
+
+                        <button onClick={() => {
+                          const newColor = prompt("Enter new HEX color (e.g., #ff0000):", layer.color || "#3b82f6");
+                          if (newColor && /^#[0-9A-F]{6}$/i.test(newColor)) {
+                             updateDoc(doc(db, "projects", projectId as string, "layers", layer.id), { color: newColor });
+                          }
+                          setActiveLayerMenuId(null);
+                        }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
+                          <Palette className="w-4 h-4 text-pink-400" /> Edit Properties...
+                        </button>
+
                         <button onClick={() => {
                           if (confirm(`Are you sure you want to delete "${layer.name}"?`)) {
                              deleteDoc(doc(db, "projects", projectId as string, "layers", layer.id));
