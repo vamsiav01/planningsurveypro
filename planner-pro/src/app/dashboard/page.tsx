@@ -583,12 +583,25 @@ function DashboardContent() {
       return;
     }
 
-    const swapCoords = (arr: any): any => {
+    const swapCoordsAndClose = (arr: any, depth: number): any => {
       if (!Array.isArray(arr)) return arr;
+      // Base coordinate pair
       if (arr.length >= 2 && typeof arr[0] === 'number' && typeof arr[1] === 'number') {
         return [arr[1], arr[0]]; // [lng, lat] for GeoJSON
       }
-      return arr.map(item => swapCoords(item));
+      
+      const mapped = arr.map(item => swapCoordsAndClose(item, depth + 1));
+      
+      // If this array represents a linear ring (array of [lng, lat]), ensure it's closed
+      if (mapped.length > 0 && Array.isArray(mapped[0]) && typeof mapped[0][0] === 'number') {
+        const first = mapped[0];
+        const last = mapped[mapped.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) {
+          mapped.push([...first]); // Close the ring
+        }
+      }
+      
+      return mapped;
     };
 
     const getDepth = (a: any): number => Array.isArray(a) ? 1 + getDepth(a[0]) : 0;
@@ -596,14 +609,12 @@ function DashboardContent() {
     const features = surveys.map((survey, index) => {
       let geometry: any = null;
       
-      // If footprint exists, use Polygon. If not, use Point.
       if (survey.osmData?.coords) {
-        const geoJsonCoords = swapCoords(survey.osmData.coords);
-        let fixedCoords = geoJsonCoords;
+        let fixedCoords = swapCoordsAndClose(survey.osmData.coords, 0);
         let geomType = "Polygon";
         const depth = getDepth(fixedCoords);
         if (depth === 2) {
-          fixedCoords = [fixedCoords]; // GeoJSON Polygons require an array of rings
+          fixedCoords = [fixedCoords];
         } else if (depth === 4) {
           geomType = "MultiPolygon";
         }
