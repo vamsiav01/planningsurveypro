@@ -8,7 +8,6 @@ import "leaflet-draw/dist/leaflet.draw.css";
 import "leaflet-draw";
 import "leaflet-geosearch/dist/geosearch.css";
 import { GeoSearchControl, OpenStreetMapProvider } from "leaflet-geosearch";
-import { GeoSearchControl, OpenStreetMapProvider } from "leaflet-geosearch";
 
 const defaultIcon = L.divIcon({
   className: "custom-div-icon",
