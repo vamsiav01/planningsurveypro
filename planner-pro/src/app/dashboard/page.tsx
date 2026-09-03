@@ -174,18 +174,35 @@ function DashboardContent() {
     reader.onload = async (event) => {
       try {
         const content = event.target?.result as string;
-        const parsed = JSON.parse(content);
-        const features = Array.isArray(parsed.features) ? parsed.features : [parsed];
+        let features = [];
+        
+        if (file.name.toLowerCase().endsWith('.kml')) {
+          const { kml } = await import('@tmcw/togeojson');
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(content, 'text/xml');
+          const geojson = kml(doc);
+          features = Array.isArray(geojson.features) ? geojson.features : [];
+        } else {
+          const parsed = JSON.parse(content);
+          features = Array.isArray(parsed.features) ? parsed.features : [parsed];
+        }
+
+        const payloadString = JSON.stringify(features);
+        if (payloadString.length > 900000) {
+          alert("This file is too large to be saved directly to the database in a single layer. Please split your file into smaller layers under 1MB.");
+          return;
+        }
+
         const newLayer = {
-          name: file.name.replace('.geojson', ''),
+          name: file.name.replace(/\.(geojson|kml)$/i, ''),
           color: '#10b981',
           features: features,
           createdAt: serverTimestamp()
         };
         await addDoc(collection(db, "projects", projectId, "layers"), newLayer);
         setShowAddLayerChoiceModal(false);
-      } catch (err) {
-        alert("Failed to parse GeoJSON file.");
+      } catch (err: any) {
+        alert("Failed to parse file: " + (err.message || err.toString()));
       }
     };
     reader.readAsText(file);
