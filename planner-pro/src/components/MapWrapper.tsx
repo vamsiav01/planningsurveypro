@@ -8,9 +8,7 @@ import "leaflet-draw/dist/leaflet.draw.css";
 import "leaflet-draw";
 import "leaflet-geosearch/dist/geosearch.css";
 import { GeoSearchControl, OpenStreetMapProvider } from "leaflet-geosearch";
-import { PMTiles } from "pmtiles";
-import { VectorTile } from "@mapbox/vector-tile";
-import Pbf from "pbf";
+import { GeoSearchControl, OpenStreetMapProvider } from "leaflet-geosearch";
 
 const defaultIcon = L.divIcon({
   className: "custom-div-icon",
@@ -97,7 +95,7 @@ function LocateControl() {
     setLocating(true);
     map.locate({ setView: true, maxZoom: 18 });
     map.once("locationfound", () => setLocating(false));
-    map.once("locationerror", () => { setLocating(false); alert("Unable to retrieve your location."); });
+    map.once("locationerror", () => { setLocating(false); console.warn("Unable to retrieve your location."); });
   };
   return (
     <div className="leaflet-top leaflet-right" style={{ top: "130px" }}>
@@ -110,83 +108,64 @@ function LocateControl() {
   );
 }
 
-const pmtilesUrl = "https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles/2026-07-22.0/buildings.pmtiles";
-const p = new PMTiles(pmtilesUrl);
-const tileCache = new Map<string, any[]>();
-
-function GlobalPmtilesFetcher({ onMapClick, activeFootprintId, surveys, onLoading }: { onMapClick: (lat: number, lng: number, fp: any) => void; activeFootprintId?: string | number; surveys: any[]; onLoading: (isLoading: boolean) => void; }) {
+function GlobalOverpassFetcher({ onMapClick, activeFootprintId, surveys, onLoading }: { onMapClick: (lat: number, lng: number, fp: any) => void; activeFootprintId?: string | number; surveys: any[]; onLoading: (isLoading: boolean) => void; }) {
   const map = useMap();
   const [bgFootprints, setBgFootprints] = useState<any[]>([]);
+  const cache = useRef(new Map<string, any[]>());
+
   const fetchTiles = async () => {
     const zoom = map.getZoom();
-    const tileZoom = Math.min(zoom, 14);
-    if (zoom < 14) { setBgFootprints([]); return; }
-    onLoading(true);
+    if (zoom < 16) { setBgFootprints([]); return; }
+    
     const bounds = map.getBounds();
-    const north = bounds.getNorth(); const south = bounds.getSouth(); const west = bounds.getWest(); const east = bounds.getEast();
-    const xMin = Math.floor((west + 180) / 360 * Math.pow(2, tileZoom));
-    const xMax = Math.floor((east + 180) / 360 * Math.pow(2, tileZoom));
-    const yMin = Math.floor((1 - Math.log(Math.tan(north * Math.PI / 180) + 1 / Math.cos(north * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, tileZoom));
-    const yMax = Math.floor((1 - Math.log(Math.tan(south * Math.PI / 180) + 1 / Math.cos(south * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, tileZoom));
-    let allFeatures: any[] = [];
-    let tilePromises: any[] = [];
-    for (let x = xMin; x <= xMax; x++) {
-      for (let y = yMin; y <= yMax; y++) {
-        const tileKey = `${tileZoom}-${x}-${y}`;
-        if (tileCache.has(tileKey)) { allFeatures = allFeatures.concat(tileCache.get(tileKey)!); continue; }
-        const fetchPromise = p.getZxy(tileZoom, x, y).then(tileData => {
-          if (!tileData) { tileCache.set(tileKey, []); return []; }
-          let tile;
-          try { tile = new VectorTile(new Pbf(new Uint8Array(tileData.data)) as any); } catch (e) { tileCache.set(tileKey, []); return []; }
-          const features: any[] = [];
-          for (const layerName in tile.layers) {
-            if (layerName.includes("building")) {
-              const layer = tile.layers[layerName];
-              for (let i = 0; i < layer.length; i++) {
-                const feature = layer.feature(i);
-                const geojson = feature.toGeoJSON(x, y, tileZoom);
-                if (geojson.geometry.type === "Polygon") {
-                  const leafletCoords = geojson.geometry.coordinates.map((ring: number[][]) => 
-                    ring.map((coord: number[]) => [coord[1], coord[0]])
-                  );
-                  const props = geojson.properties || {};
-                  features.push({ id: props.id || `${tileKey}-${layerName}-${i}`, name: props.names?.primary || props.name || "", height: props.height || null, coords: leafletCoords });
-                } else if (geojson.geometry.type === "MultiPolygon") {
-                  const leafletCoords = geojson.geometry.coordinates.map((poly: number[][][]) => 
-                    poly.map((ring: number[][]) => 
-                      ring.map((coord: number[]) => [coord[1], coord[0]])
-                    )
-                  );
-                  const props = geojson.properties || {};
-                  features.push({ id: props.id || `${tileKey}-${layerName}-${i}`, name: props.names?.primary || props.name || "", height: props.height || null, coords: leafletCoords });
-                }
-              }
-            }
-          }
-          tileCache.set(tileKey, features);
-          return features;
-        }).catch(() => { tileCache.set(tileKey, []); return []; });
-        tilePromises.push(fetchPromise);
-      }
+    const n = bounds.getNorth(); const s = bounds.getSouth(); 
+    const w = bounds.getWest(); const e = bounds.getEast();
+    
+    const tileKey = `${Math.round(s*100)},${Math.round(w*100)},${Math.round(n*100)},${Math.round(e*100)}`;
+    if (cache.current.has(tileKey)) {
+      setBgFootprints(cache.current.get(tileKey)!);
+      return;
     }
+
+    onLoading(true);
     try {
-      const results = await Promise.all(tilePromises);
-      results.forEach(res => { allFeatures = allFeatures.concat(res); });
-      const pad = 0.001;
-      const visibleFeatures = allFeatures.filter(f => {
-        if (!f.coords || f.coords.length === 0) return false;
-        let c = f.coords;
-        while (c.length > 0 && Array.isArray(c[0]) && typeof c[0][0] !== 'number') { c = c[0]; }
-        if (!c || c.length === 0 || !Array.isArray(c[0]) || typeof c[0][0] !== 'number') return false;
-        const lat = c[0][0]; const lon = c[0][1];
-        return lat >= south - pad && lat <= north + pad && lon >= west - pad && lon <= east + pad;
+      const q = `[out:json][timeout:15];(way["building"](${s},${w},${n},${e});relation["building"](${s},${w},${n},${e}););out geom;`;
+      const res = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: q });
+      const data = await res.json();
+      const features: any[] = [];
+      
+      data.elements.forEach((el: any) => {
+        let coords: [number, number][] = [];
+        if (el.type === 'way' && el.geometry) {
+          coords = el.geometry.map((g: any) => [g.lat, g.lon]);
+        } else if (el.type === 'relation' && el.members) {
+          // Find the outer way
+          const outer = el.members.find((m: any) => m.role === 'outer' && m.geometry);
+          if (outer) {
+            coords = outer.geometry.map((g: any) => [g.lat, g.lon]);
+          }
+        }
+        if (coords.length > 0) {
+          features.push({ id: el.id, name: el.tags?.name || "", coords });
+        }
       });
-      setBgFootprints(visibleFeatures);
-    } catch (e) { console.error(e); }
+      cache.current.set(tileKey, features);
+      setBgFootprints(features);
+    } catch (err) {
+      console.error(err);
+    }
     onLoading(false);
   };
-  useEffect(() => { fetchTiles(); }, []);
-  useMapEvents({ moveend: fetchTiles, zoomend: fetchTiles });
+
+  useEffect(() => {
+    let timeout: any;
+    const handler = () => { clearTimeout(timeout); timeout = setTimeout(fetchTiles, 800); };
+    map.on('moveend', handler);
+    map.on('zoomend', handler);
+    fetchTiles();
+    return () => { map.off('moveend', handler); map.off('zoomend', handler); clearTimeout(timeout); };
+  }, [map]);
+
   return (
     <>
       {bgFootprints.map((footprint) => {
@@ -194,8 +173,8 @@ function GlobalPmtilesFetcher({ onMapClick, activeFootprintId, surveys, onLoadin
         const isSaved = surveys.some(s => s.osmData?.id === footprint.id);
         if (isSaved) return null;
         return (
-          <Polygon key={footprint.id} positions={footprint.coords} pathOptions={{ color: "#a855f7", weight: 2, fillColor: "#a855f7", fillOpacity: 0.2 }} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); onMapClick(e.latlng.lat, e.latlng.lng, { coords: footprint.coords, id: footprint.id, tags: { name: footprint.name, height: footprint.height, building: "yes", source: "OvertureMaps AI" } }); } }}>
-            <Tooltip>{footprint.name || "Unsurveyed AI Building"}</Tooltip>
+          <Polygon key={footprint.id} positions={footprint.coords} pathOptions={{ color: "#a855f7", weight: 2, fillColor: "#a855f7", fillOpacity: 0.2 }} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); onMapClick(e.latlng.lat, e.latlng.lng, { coords: footprint.coords, id: footprint.id, tags: { name: footprint.name, building: "yes", source: "OSM Overpass" } }); } }}>
+            <Tooltip>{footprint.name || "Unsurveyed Building"}</Tooltip>
           </Polygon>
         );
       })}
@@ -257,9 +236,7 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onShape
         <GeolocationEvents onMapClick={onMapClick} />
         <LocateControl />
 
-        {show3DBuildings && (
-          <GlobalPmtilesFetcher onMapClick={onMapClick} activeFootprintId={activeFootprint?.id} surveys={surveys} onLoading={(loading) => setIsAiLoading(loading)} />
-        )}
+        {show3DBuildings && <GlobalOverpassFetcher onMapClick={onMapClick} activeFootprintId={activeFootprint?.id} surveys={surveys} onLoading={setIsAiLoading} />}
 
         {(customLayers || []).map(layer =>
           (layer.features || []).map((feature: any, fi: number) => {

@@ -196,7 +196,7 @@ function DashboardContent() {
         const newLayer = {
           name: file.name.replace(/\.(geojson|kml)$/i, ''),
           color: '#10b981',
-          features: features,
+          features: payloadString,
           createdAt: serverTimestamp()
         };
         await addDoc(collection(db, "projects", projectId, "layers"), newLayer);
@@ -262,7 +262,16 @@ function DashboardContent() {
     if (!user) return;
     const layersQuery = query(collection(db, `projects/${projectId}/layers`), orderBy("createdAt", "asc"));
     const unsubscribeLayers = onSnapshot(layersQuery, (snapshot) => {
-      setCustomLayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setCustomLayers(snapshot.docs.map(doc => {
+        const data = doc.data();
+        let parsedFeatures = data.features;
+        if (typeof parsedFeatures === 'string') {
+          try {
+            parsedFeatures = JSON.parse(parsedFeatures);
+          } catch(e) {}
+        }
+        return { id: doc.id, ...data, features: parsedFeatures };
+      }));
     });
     return () => unsubscribeLayers();
   }, [projectId, user]);
@@ -398,9 +407,7 @@ function DashboardContent() {
           way["building:part"](around:25, ${lat}, ${lng});
           relation["building:part"](around:25, ${lat}, ${lng});
         );
-        out body;
-        >;
-        out skel qt;
+        out geom;
       `;
       const response = await fetch("https://overpass-api.de/api/interpreter", {
         method: "POST",
@@ -412,21 +419,23 @@ function DashboardContent() {
       let tags: any = {};
 
       if (data.elements && data.elements.length > 0) {
-        const ways = data.elements.filter((e: any) => e.type === 'way' && e.tags && (e.tags.building || e.tags['building:part']));
-        if (ways.length > 0) {
-          const way = ways[0];
-          tags = way.tags;
-          const coords: [number, number][] = [];
+        const buildings = data.elements.filter((e: any) => e.tags && (e.tags.building || e.tags['building:part']));
+        if (buildings.length > 0) {
+          const b = buildings[0];
+          tags = b.tags;
+          let coords: [number, number][] = [];
 
-          way.nodes.forEach((nodeId: number) => {
-            const node = data.elements.find((e: any) => e.type === 'node' && e.id === nodeId);
-            if (node) {
-              coords.push([node.lat, node.lon]);
+          if (b.type === 'way' && b.geometry) {
+            coords = b.geometry.map((g: any) => [g.lat, g.lon]);
+          } else if (b.type === 'relation' && b.members) {
+            const outer = b.members.find((m: any) => m.role === 'outer' && m.geometry);
+            if (outer) {
+              coords = outer.geometry.map((g: any) => [g.lat, g.lon]);
             }
-          });
+          }
 
           if (coords.length > 0) {
-            foundBuilding = { coords, tags, id: way.id };
+            foundBuilding = { coords, tags, id: b.id };
             setActiveFootprint(foundBuilding);
 
             const { fetchedName, fetchedFloors, fetchedZoning } = await resolveBuildingDetails(coords, tags, lat, lng);
@@ -924,7 +933,7 @@ function DashboardContent() {
                   const targetLayer = customLayers.find(l => l.id === shapeTargetLayerId);
                   if (targetLayer) {
                     const newFeatures = [...(targetLayer.features || []), pendingShape];
-                    await updateDoc(doc(db, "projects", projectId, "layers", targetLayer.id), { features: newFeatures });
+                    await updateDoc(doc(db, "projects", projectId as string, "layers", targetLayer.id), { features: JSON.stringify(newFeatures) });
                   }
                   setShowShapeToLayerModal(false); setPendingShape(null);
                 }} className="flex-1 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-50">Save Shape</button>
@@ -1102,7 +1111,7 @@ function DashboardContent() {
                           addDoc(collection(db, "projects", projectId as string, "layers"), {
                             name: layer.name + " (Copy)",
                             color: layer.color,
-                            features: layer.features,
+                            features: JSON.stringify(layer.features || []),
                             createdAt: serverTimestamp()
                           });
                           setActiveLayerMenuId(null);
@@ -1541,9 +1550,14 @@ function DashboardContent() {
               </div>
               <div className="flex gap-3 pt-2">
                 <button onClick={() => setShowAddLayerModal(false)} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-sm font-medium transition-colors">Cancel</button>
-                <button onClick={() => {
+                <button onClick={async () => {
                   if (!newLayerName.trim()) return;
-                  setCustomLayers([...customLayers, { id: 'layer_' + Date.now(), name: newLayerName, color: newLayerColor, features: [] }]);
+                  await addDoc(collection(db, "projects", projectId as string, "layers"), {
+                    name: newLayerName,
+                    color: newLayerColor,
+                    features: JSON.stringify([]),
+                    createdAt: serverTimestamp()
+                  });
                   setNewLayerName("");
                   setShowAddLayerModal(false);
                 }} className="flex-1 py-3 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl text-sm font-medium transition-colors">Create Layer</button>
