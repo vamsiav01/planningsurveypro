@@ -167,9 +167,12 @@ function DashboardContent() {
     return match;
   }) : [];
 
+  const [uploadingLayer, setUploadingLayer] = useState(false);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploadingLayer(true);
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
@@ -190,6 +193,7 @@ function DashboardContent() {
         const payloadString = JSON.stringify(features);
         if (payloadString.length > 900000) {
           alert("This file is too large to be saved directly to the database in a single layer. Please split your file into smaller layers under 1MB.");
+          setUploadingLayer(false);
           return;
         }
 
@@ -199,10 +203,12 @@ function DashboardContent() {
           features: payloadString,
           createdAt: serverTimestamp()
         };
-        await addDoc(collection(db, "projects", projectId, "layers"), newLayer);
+        await addDoc(collection(db, "projects", projectId as string, "layers"), newLayer);
         setShowAddLayerChoiceModal(false);
       } catch (err: any) {
         alert("Failed to parse file: " + (err.message || err.toString()));
+      } finally {
+        setUploadingLayer(false);
       }
     };
     reader.readAsText(file);
@@ -1520,15 +1526,15 @@ function DashboardContent() {
                 </div>
               </button>
 
-              <label className="w-full flex items-center gap-4 p-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-colors text-left cursor-pointer">
+              <label className={`w-full flex items-center gap-4 p-4 ${uploadingLayer ? 'bg-white/10 opacity-50 cursor-not-allowed' : 'bg-white/5 hover:bg-white/10 cursor-pointer'} border border-white/5 rounded-xl transition-colors text-left`}>
                 <div className="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                  <Download className="w-5 h-5" />
+                  {uploadingLayer ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">Upload from Device</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Import GeoJSON or KML files</p>
+                  <h3 className="text-sm font-bold text-white">{uploadingLayer ? 'Uploading Layer...' : 'Upload from Device'}</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">{uploadingLayer ? 'Please wait while we parse and save' : 'Import GeoJSON or KML files'}</p>
                 </div>
-                <input type="file" accept=".geojson,.json,.kml" className="hidden" onChange={handleFileUpload} />
+                <input type="file" accept=".geojson,.json,.kml" className="hidden" disabled={uploadingLayer} onChange={handleFileUpload} />
               </label>
             </div>
           </div>
