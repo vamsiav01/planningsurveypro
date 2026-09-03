@@ -551,6 +551,73 @@ function DashboardContent() {
     }
   };
 
+  const handleExportGeoJSON = () => {
+    if (surveys.length === 0) {
+      alert("No surveys to export.");
+      return;
+    }
+
+    const swapCoords = (arr: any): any => {
+      if (!Array.isArray(arr)) return arr;
+      if (arr.length >= 2 && typeof arr[0] === 'number' && typeof arr[1] === 'number') {
+        return [arr[1], arr[0]]; // [lng, lat] for GeoJSON
+      }
+      return arr.map(item => swapCoords(item));
+    };
+
+    const getDepth = (a: any): number => Array.isArray(a) ? 1 + getDepth(a[0]) : 0;
+
+    const features = surveys.map((survey, index) => {
+      let geometry: any = null;
+      
+      // If footprint exists, use Polygon. If not, use Point.
+      if (survey.osmData?.coords) {
+        const geoJsonCoords = swapCoords(survey.osmData.coords);
+        let fixedCoords = geoJsonCoords;
+        let geomType = "Polygon";
+        const depth = getDepth(fixedCoords);
+        if (depth === 2) {
+          fixedCoords = [fixedCoords]; // GeoJSON Polygons require an array of rings
+        } else if (depth === 4) {
+          geomType = "MultiPolygon";
+        }
+        geometry = { type: geomType, coordinates: fixedCoords };
+      } else if (survey.location) {
+        geometry = { type: "Point", coordinates: [survey.location.lng, survey.location.lat] };
+      }
+
+      const ans = survey.answers || survey;
+      return {
+        type: "Feature",
+        geometry,
+        properties: {
+          surveyLabel: `S${index + 1}`,
+          surveyId: survey.id,
+          houseNo: ans.houseNo || "",
+          buildingName: ans.buildingName || "",
+          floors: ans.floors || "",
+          zoning: ans.zoning || "",
+          condition: ans.condition || "",
+          roadAccess: ans.roadAccess || "",
+          occupants: ans.occupants || "",
+          yearBuilt: ans.yearBuilt || "",
+          ...ans.dynamic,
+          recordedAt: survey.createdAt?.seconds ? new Date(survey.createdAt.seconds * 1000).toISOString() : ""
+        }
+      };
+    });
+
+    const geojson = { type: "FeatureCollection", features };
+    const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${project?.name?.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'project'}_surveys.geojson`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (authLoading || !user) {
     return (
       <div className="min-h-screen bg-[#0b1121] flex items-center justify-center">
@@ -1080,73 +1147,6 @@ function DashboardContent() {
               </div>
             )}
           </div>
-
-  const handleExportGeoJSON = () => {
-    if (surveys.length === 0) {
-      alert("No surveys to export.");
-      return;
-    }
-
-    const swapCoords = (arr: any): any => {
-      if (!Array.isArray(arr)) return arr;
-      if (arr.length >= 2 && typeof arr[0] === 'number' && typeof arr[1] === 'number') {
-        return [arr[1], arr[0]]; // [lng, lat] for GeoJSON
-      }
-      return arr.map(item => swapCoords(item));
-    };
-
-    const getDepth = (a: any): number => Array.isArray(a) ? 1 + getDepth(a[0]) : 0;
-
-    const features = surveys.map((survey, index) => {
-      let geometry: any = null;
-      
-      // If footprint exists, use Polygon. If not, use Point.
-      if (survey.osmData?.coords) {
-        const geoJsonCoords = swapCoords(survey.osmData.coords);
-        let fixedCoords = geoJsonCoords;
-        let geomType = "Polygon";
-        const depth = getDepth(fixedCoords);
-        if (depth === 2) {
-          fixedCoords = [fixedCoords]; // GeoJSON Polygons require an array of rings
-        } else if (depth === 4) {
-          geomType = "MultiPolygon";
-        }
-        geometry = { type: geomType, coordinates: fixedCoords };
-      } else if (survey.location) {
-        geometry = { type: "Point", coordinates: [survey.location.lng, survey.location.lat] };
-      }
-
-      const ans = survey.answers || survey;
-      return {
-        type: "Feature",
-        geometry,
-        properties: {
-          surveyLabel: `S${index + 1}`,
-          surveyId: survey.id,
-          houseNo: ans.houseNo || "",
-          buildingName: ans.buildingName || "",
-          floors: ans.floors || "",
-          zoning: ans.zoning || "",
-          condition: ans.condition || "",
-          roadAccess: ans.roadAccess || "",
-          occupants: ans.occupants || "",
-          yearBuilt: ans.yearBuilt || "",
-          ...ans.dynamic,
-          recordedAt: survey.createdAt?.seconds ? new Date(survey.createdAt.seconds * 1000).toISOString() : ""
-        }
-      };
-    });
-
-    const geojson = { type: "FeatureCollection", features };
-    const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${project?.name?.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'project'}_surveys.geojson`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
           {/* Action Buttons */}
           <div className="space-y-3 mb-8">
