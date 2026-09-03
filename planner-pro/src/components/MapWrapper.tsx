@@ -137,26 +137,28 @@ function GlobalPmtilesFetcher({ onMapClick, activeFootprintId, surveys, onLoadin
           if (!tileData) { tileCache.set(tileKey, []); return []; }
           let tile;
           try { tile = new VectorTile(new Pbf(new Uint8Array(tileData.data)) as any); } catch (e) { tileCache.set(tileKey, []); return []; }
-          const layer = tile.layers["building"] || tile.layers["building_part"];
           const features: any[] = [];
-          if (layer) {
-            for (let i = 0; i < layer.length; i++) {
-              const feature = layer.feature(i);
-              const geojson = feature.toGeoJSON(x, y, tileZoom);
-              if (geojson.geometry.type === "Polygon") {
-                const leafletCoords = geojson.geometry.coordinates.map((ring: number[][]) => 
-                  ring.map((coord: number[]) => [coord[1], coord[0]])
-                );
-                const props = geojson.properties || {};
-                features.push({ id: props.id || `${tileKey}-${i}`, name: props.names?.primary || props.name || "", height: props.height || null, coords: leafletCoords });
-              } else if (geojson.geometry.type === "MultiPolygon") {
-                const leafletCoords = geojson.geometry.coordinates.map((poly: number[][][]) => 
-                  poly.map((ring: number[][]) => 
+          for (const layerName in tile.layers) {
+            if (layerName.includes("building")) {
+              const layer = tile.layers[layerName];
+              for (let i = 0; i < layer.length; i++) {
+                const feature = layer.feature(i);
+                const geojson = feature.toGeoJSON(x, y, tileZoom);
+                if (geojson.geometry.type === "Polygon") {
+                  const leafletCoords = geojson.geometry.coordinates.map((ring: number[][]) => 
                     ring.map((coord: number[]) => [coord[1], coord[0]])
-                  )
-                );
-                const props = geojson.properties || {};
-                features.push({ id: props.id || `${tileKey}-${i}`, name: props.names?.primary || props.name || "", height: props.height || null, coords: leafletCoords });
+                  );
+                  const props = geojson.properties || {};
+                  features.push({ id: props.id || `${tileKey}-${layerName}-${i}`, name: props.names?.primary || props.name || "", height: props.height || null, coords: leafletCoords });
+                } else if (geojson.geometry.type === "MultiPolygon") {
+                  const leafletCoords = geojson.geometry.coordinates.map((poly: number[][][]) => 
+                    poly.map((ring: number[][]) => 
+                      ring.map((coord: number[]) => [coord[1], coord[0]])
+                    )
+                  );
+                  const props = geojson.properties || {};
+                  features.push({ id: props.id || `${tileKey}-${layerName}-${i}`, name: props.names?.primary || props.name || "", height: props.height || null, coords: leafletCoords });
+                }
               }
             }
           }
@@ -208,7 +210,7 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onShape
 
   return (
     <div className="w-full h-full relative z-0 bg-[#0b1121]">
-      <MapContainer center={[23.25, 77.40]} zoom={15} style={{ height: "100%", width: "100%", zIndex: 1 }} zoomControl={true} preferCanvas={false}>
+      <MapContainer center={[23.25, 77.40]} zoom={15} style={{ height: "100%", width: "100%", zIndex: 1 }} zoomControl={true} preferCanvas={false} scrollWheelZoom={true} dragging={true} doubleClickZoom={true}>
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="Satellite (Esri)">
             <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution="Tiles &copy; Esri" maxZoom={19} />
@@ -286,9 +288,29 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onShape
           return (
             <Fragment key={survey.id}>
               {survey.osmData?.coords && (
-                <Polygon positions={survey.osmData.coords} pathOptions={{ color: fillColor, weight: 2, fillColor: fillColor, fillOpacity: 0.5 }} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onSurveyClick) onSurveyClick(survey); } }}>
-                  <Tooltip>{ans.houseNo || ans.buildingName || "Surveyed Building"}</Tooltip>
-                </Polygon>
+                (function() {
+                  const isValid = (arr: any): boolean => {
+                    if (!Array.isArray(arr)) return false;
+                    for (let c of arr) {
+                      if (Array.isArray(c)) {
+                        if (typeof c[0] === 'number' && typeof c[1] === 'number') continue;
+                        if (!isValid(c)) return false;
+                      } else if (c && typeof c === 'object') {
+                        if (typeof c.lat === 'number' && typeof c.lng === 'number') continue;
+                        return false;
+                      } else {
+                        return false;
+                      }
+                    }
+                    return true;
+                  };
+                  if (!isValid(survey.osmData.coords)) return null;
+                  return (
+                    <Polygon positions={survey.osmData.coords} pathOptions={{ color: fillColor, weight: 2, fillColor: fillColor, fillOpacity: 0.5 }} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onSurveyClick) onSurveyClick(survey); } }}>
+                      <Tooltip>{ans.houseNo || ans.buildingName || "Surveyed Building"}</Tooltip>
+                    </Polygon>
+                  );
+                })()
               )}
               <Marker position={[survey.location.lat, survey.location.lng]} icon={labelIcon} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onSurveyClick) onSurveyClick(survey); } }}>
                 <Tooltip>{ans.houseNo || ans.buildingName || "Survey Point"}</Tooltip>

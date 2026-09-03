@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { Loader2, Hexagon, Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 export default function Home() {
   const { user, loading: authLoading } = useAuth();
@@ -66,7 +66,7 @@ export default function Home() {
       <div className="w-full max-w-md bg-[#111827] rounded-2xl p-10 shadow-2xl border border-white/5">
         <div className="flex flex-col items-center mb-8">
           <div className="flex justify-center mb-4">
-            <img src="/icon-512.png" alt="Planning Survey Pro" className="w-16 h-16 rounded-2xl shadow-lg" />
+            <Hexagon size={48} className="text-slate-200 stroke-[1.5]" />
           </div>
           <h1 className="text-2xl font-semibold text-white text-center mb-1">Planning Survey Pro</h1>
           <p className="text-slate-400 text-sm text-center">Welcome back to the field</p>

@@ -8,7 +8,7 @@ import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc,
 import { db } from "@/lib/firebase";
 import {
   Loader2, Hexagon, LayoutDashboard, Trash2, User as UserIcon, LogOut,
-  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft, Link, Check, Plus, GripVertical, Settings2, Lock, Share2, Copy, Pencil
+  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft, Link, Check, Plus, GripVertical, Settings2, Lock, Share2, Copy, Pencil, MoreVertical
 } from "lucide-react";
 
 // Safe dynamic import for Leaflet map
@@ -114,6 +114,9 @@ function DashboardContent() {
 
   // Map Layer Filters
   const [showSurveyData, setShowSurveyData] = useState(true);
+  const [show3DBuildings, setShow3DBuildings] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [streetViewMode, setStreetViewMode] = useState(false);
   const [filterZoning, setFilterZoning] = useState("All");
   const [filterCondition, setFilterCondition] = useState("All");
   const [filterFloors, setFilterFloors] = useState("All");
@@ -121,6 +124,7 @@ function DashboardContent() {
   const [showAddLayerModal, setShowAddLayerModal] = useState(false);
   const [newLayerName, setNewLayerName] = useState("");
   const [newLayerColor, setNewLayerColor] = useState("#3b82f6");
+  const [activeLayerMenuId, setActiveLayerMenuId] = useState<string | null>(null);
 
   // Mobile UI State
   const [mobileTab, setMobileTab] = useState<'map' | 'layers' | 'analytics' | 'surveys'>('map');
@@ -164,18 +168,18 @@ function DashboardContent() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const content = event.target?.result as string;
         const parsed = JSON.parse(content);
         const features = Array.isArray(parsed.features) ? parsed.features : [parsed];
         const newLayer = {
-          id: 'imported-' + Date.now(),
           name: file.name.replace('.geojson', ''),
           color: '#10b981',
-          features: features
+          features: features,
+          createdAt: serverTimestamp()
         };
-        setCustomLayers([...customLayers, newLayer]);
+        await addDoc(collection(db, "projects", projectId, "layers"), newLayer);
         setShowAddLayerChoiceModal(false);
       } catch (err) {
         alert("Failed to parse GeoJSON file.");
@@ -233,6 +237,16 @@ function DashboardContent() {
     return () => unsubscribe();
   }, [projectId, user]);
 
+  // Fetch Custom Layers
+  useEffect(() => {
+    if (!user) return;
+    const layersQuery = query(collection(db, `projects/${projectId}/layers`), orderBy("createdAt", "asc"));
+    const unsubscribeLayers = onSnapshot(layersQuery, (snapshot) => {
+      setCustomLayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribeLayers();
+  }, [projectId, user]);
+
   const resolveBuildingDetails = async (coords: [number, number][], tags: any, lat: number, lng: number) => {
     let fetchedName = tags.name || tags['addr:housename'] || "";
     if (!fetchedName && tags['addr:housenumber'] && tags['addr:street']) {
@@ -267,6 +281,25 @@ function DashboardContent() {
     else if (['industrial', 'warehouse', 'factory'].includes(bType)) fetchedZoning = 'industrial';
     else if (['public', 'school', 'hospital', 'civic', 'government'].includes(bType)) fetchedZoning = 'public';
 
+    // Try Google Maps first if API key is provided for better accuracy
+    if (!fetchedName) {
+      const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      if (googleKey) {
+        try {
+          const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${googleKey}&result_type=premise|point_of_interest|establishment|street_address`);
+          const data = await res.json();
+          if (data.results && data.results.length > 0) {
+            const result = data.results[0];
+            const poi = result.address_components.find((c: any) => c.types.includes("point_of_interest") || c.types.includes("premise") || c.types.includes("establishment"));
+            if (poi) fetchedName = poi.long_name;
+            else fetchedName = result.formatted_address.split(',')[0];
+          }
+        } catch (e) {
+          console.error("Google Geocoding error:", e);
+        }
+      }
+    }
+
     // TRICK: Reverse geocode to find name from online sources (Nominatim)
     if (!fetchedName) {
       try {
@@ -292,6 +325,12 @@ function DashboardContent() {
   const lastFootprintClickRef = useRef<number>(0);
 
   const handleMapClick = async (lat: number, lng: number, preFetchedFootprint?: any) => {
+    if (streetViewMode) {
+      window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`, '_blank');
+      setStreetViewMode(false); // Auto-turn off after one use to prevent annoyance
+      return;
+    }
+
     // Reset edit mode when clicking a new spot
     setSelectedSurveyId(null);
     setHouseNo("");
@@ -472,10 +511,7 @@ function DashboardContent() {
       const surveyData = {
         location: activeClickLoc,
         osmData: activeFootprint ? {
-          coords: activeFootprint.coords.map((c: any) => ({
-            lat: Array.isArray(c) ? c[0] : c.lat,
-            lng: Array.isArray(c) ? c[1] : c.lng
-          })),
+          coords: activeFootprint.coords,
           tags: activeFootprint.tags,
           id: (activeFootprint as any).id || "drawn"
         } : null,
@@ -549,17 +585,42 @@ function DashboardContent() {
           surveys={filteredSurveys}
           onMapClick={handleMapClick}
           onShapeDrawn={(feature: any) => {
-            setPendingShape(feature);
-            if (customLayers.length > 0) {
-              setShapeTargetLayerId(customLayers[0].id);
+            if (feature.geometry.type === "Polygon") {
+              // Automatically use drawn polygons as the footprint for a new survey!
+              const coords = feature.geometry.coordinates[0].map((c: number[]) => [c[1], c[0]]); // GeoJSON is [lng, lat], Leaflet is [lat, lng]
+              setActiveFootprint({ coords, tags: { source: "manual_draw", building: "yes" }, id: "drawn-" + Date.now() });
+              
+              // Calculate center to place the marker
+              let latSum = 0, lngSum = 0;
+              coords.forEach((c: any) => { latSum += c[0]; lngSum += c[1]; });
+              setActiveClickLoc({ lat: latSum / coords.length, lng: lngSum / coords.length });
+              
+              // Reset form for new survey
+              setSelectedSurveyId(null);
+              setHouseNo("");
+              setBuildingName("");
+              setFloors("G");
+              setZoning("residential");
+              setCondition("good");
+              setRoadAccess("paved");
+              setOccupants("");
+              setYearBuilt("");
+              setDynamicAnswers({});
+            } else {
+              setPendingShape(feature);
+              if (customLayers.length > 0) {
+                setShapeTargetLayerId(customLayers[0].id);
+              }
+              setShowShapeToLayerModal(true);
             }
-            setShowShapeToLayerModal(true);
           }}
           onSurveyClick={handleSurveyClick}
           activeClickLoc={activeClickLoc}
           activeFootprint={activeFootprint}
           loadingFootprint={loadingFootprint}
           customLayers={customLayers}
+          show3DBuildings={show3DBuildings}
+          showHeatmap={showHeatmap}
         />
 
         {/* Floating Glassmorphism Survey Form */}
@@ -772,13 +833,12 @@ function DashboardContent() {
               </div>
               <div className="p-5 border-t border-white/10 bg-white/5 flex gap-3">
                 <button onClick={() => { setShowShapeToLayerModal(false); setPendingShape(null); }} className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 font-medium rounded-xl transition-colors text-sm">Cancel</button>
-                <button disabled={customLayers.length === 0} onClick={() => {
-                  setCustomLayers(customLayers.map(l => {
-                    if (l.id === shapeTargetLayerId) {
-                      return { ...l, features: [...(l.features || []), pendingShape] };
-                    }
-                    return l;
-                  }));
+                <button disabled={customLayers.length === 0} onClick={async () => {
+                  const targetLayer = customLayers.find(l => l.id === shapeTargetLayerId);
+                  if (targetLayer) {
+                    const newFeatures = [...(targetLayer.features || []), pendingShape];
+                    await updateDoc(doc(db, "projects", projectId, "layers", targetLayer.id), { features: newFeatures });
+                  }
                   setShowShapeToLayerModal(false); setPendingShape(null);
                 }} className="flex-1 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-50">Save Shape</button>
               </div>
@@ -877,27 +937,116 @@ function DashboardContent() {
             ) : (
               <div className="space-y-2">
                 {customLayers.map(layer => (
-                  <div key={layer.id} className="flex items-center justify-between bg-white/5 p-2 rounded-lg border border-white/5">
+                  <div key={layer.id} className="flex items-center justify-between bg-white/5 p-2 rounded-lg border border-white/5 relative">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: layer.color || '#3b82f6' }} />
                       <span className="text-sm font-medium text-slate-300">{layer.name}</span>
                     </div>
                     <div className="flex items-center gap-1 text-slate-500">
                       <span className="text-xs mr-2">{layer.features?.length || 0} features</span>
+                      <button onClick={() => setActiveLayerMenuId(activeLayerMenuId === layer.id ? null : layer.id)} className="p-1 hover:bg-white/10 rounded-md transition-colors text-slate-400">
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
                     </div>
+                    {activeLayerMenuId === layer.id && (
+                      <div className="absolute top-10 right-2 w-48 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[100]">
+                        <button onClick={() => {
+                          const newName = prompt("Enter new layer name:", layer.name);
+                          if (newName) updateDoc(doc(db, "projects", projectId as string, "layers", layer.id), { name: newName });
+                          setActiveLayerMenuId(null);
+                        }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
+                          <Pencil className="w-4 h-4" /> Rename Layer
+                        </button>
+                        <button onClick={() => {
+                          if (confirm(`Are you sure you want to delete "${layer.name}"?`)) {
+                             deleteDoc(doc(db, "projects", projectId as string, "layers", layer.id));
+                          }
+                          setActiveLayerMenuId(null);
+                        }} className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-400/10 flex items-center gap-3 border-t border-white/5">
+                          <Trash2 className="w-4 h-4" /> Remove Layer
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             )}
           </div>
 
+  const handleExportGeoJSON = () => {
+    if (surveys.length === 0) {
+      alert("No surveys to export.");
+      return;
+    }
+
+    const swapCoords = (arr: any): any => {
+      if (!Array.isArray(arr)) return arr;
+      if (arr.length >= 2 && typeof arr[0] === 'number' && typeof arr[1] === 'number') {
+        return [arr[1], arr[0]]; // [lng, lat] for GeoJSON
+      }
+      return arr.map(item => swapCoords(item));
+    };
+
+    const getDepth = (a: any): number => Array.isArray(a) ? 1 + getDepth(a[0]) : 0;
+
+    const features = surveys.map((survey, index) => {
+      let geometry: any = null;
+      
+      // If footprint exists, use Polygon. If not, use Point.
+      if (survey.osmData?.coords) {
+        const geoJsonCoords = swapCoords(survey.osmData.coords);
+        let fixedCoords = geoJsonCoords;
+        let geomType = "Polygon";
+        const depth = getDepth(fixedCoords);
+        if (depth === 2) {
+          fixedCoords = [fixedCoords]; // GeoJSON Polygons require an array of rings
+        } else if (depth === 4) {
+          geomType = "MultiPolygon";
+        }
+        geometry = { type: geomType, coordinates: fixedCoords };
+      } else if (survey.location) {
+        geometry = { type: "Point", coordinates: [survey.location.lng, survey.location.lat] };
+      }
+
+      const ans = survey.answers || survey;
+      return {
+        type: "Feature",
+        geometry,
+        properties: {
+          surveyLabel: `S${index + 1}`,
+          surveyId: survey.id,
+          houseNo: ans.houseNo || "",
+          buildingName: ans.buildingName || "",
+          floors: ans.floors || "",
+          zoning: ans.zoning || "",
+          condition: ans.condition || "",
+          roadAccess: ans.roadAccess || "",
+          occupants: ans.occupants || "",
+          yearBuilt: ans.yearBuilt || "",
+          ...ans.dynamic,
+          recordedAt: survey.createdAt?.seconds ? new Date(survey.createdAt.seconds * 1000).toISOString() : ""
+        }
+      };
+    });
+
+    const geojson = { type: "FeatureCollection", features };
+    const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${project?.name?.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'project'}_surveys.geojson`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
           {/* Action Buttons */}
           <div className="space-y-3 mb-8">
             <button className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
               <Printer className="w-4 h-4" /> Print Map Layout
             </button>
-            <button className="w-full bg-transparent border border-white/10 hover:border-white/20 hover:bg-white/5 text-slate-300 font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
-              <Download className="w-4 h-4" /> Export Project Data
+            <button onClick={handleExportGeoJSON} className="w-full bg-transparent border border-white/10 hover:border-white/20 hover:bg-white/5 text-slate-300 font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
+              <Download className="w-4 h-4" /> Export to GeoJSON
             </button>
           </div>
 
@@ -905,28 +1054,28 @@ function DashboardContent() {
           <div className="mb-8">
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Map Tools</h3>
             <div className="space-y-4">
-              <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-white/5">
+              <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-white/5 cursor-pointer" onClick={() => setShow3DBuildings(!show3DBuildings)}>
                 <div className="flex items-center gap-3 text-slate-300">
                   <Building className="w-5 h-5 text-indigo-400" /> <span className="text-sm font-medium">3D Buildings</span>
                 </div>
-                <div className="w-10 h-6 bg-slate-700 rounded-full relative cursor-pointer">
-                  <div className="w-4 h-4 bg-white rounded-full absolute left-1 top-1" />
+                <div className={`w-10 h-6 rounded-full relative transition-colors ${show3DBuildings ? 'bg-indigo-500' : 'bg-slate-700'}`}>
+                  <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${show3DBuildings ? 'translate-x-5' : 'translate-x-1'}`} />
                 </div>
               </div>
-              <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-white/5">
+              <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-white/5 cursor-pointer" onClick={() => setShowHeatmap(!showHeatmap)}>
                 <div className="flex items-center gap-3 text-slate-300">
                   <Map className="w-5 h-5 text-pink-400" /> <span className="text-sm font-medium">Survey Heatmap</span>
                 </div>
-                <div className="w-10 h-6 bg-slate-700 rounded-full relative cursor-pointer">
-                  <div className="w-4 h-4 bg-white rounded-full absolute left-1 top-1" />
+                <div className={`w-10 h-6 rounded-full relative transition-colors ${showHeatmap ? 'bg-pink-500' : 'bg-slate-700'}`}>
+                  <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${showHeatmap ? 'translate-x-5' : 'translate-x-1'}`} />
                 </div>
               </div>
-              <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-white/5">
+              <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-white/5 cursor-pointer" onClick={() => setStreetViewMode(!streetViewMode)}>
                 <div className="flex items-center gap-3 text-slate-300">
                   <Eye className="w-5 h-5 text-amber-400" /> <span className="text-sm font-medium">Street View Mode</span>
                 </div>
-                <div className="w-10 h-6 bg-slate-700 rounded-full relative cursor-pointer">
-                  <div className="w-4 h-4 bg-white rounded-full absolute left-1 top-1" />
+                <div className={`w-10 h-6 rounded-full relative transition-colors ${streetViewMode ? 'bg-amber-500' : 'bg-slate-700'}`}>
+                  <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${streetViewMode ? 'translate-x-5' : 'translate-x-1'}`} />
                 </div>
               </div>
             </div>
