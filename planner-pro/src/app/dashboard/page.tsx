@@ -8,7 +8,7 @@ import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, updateDoc,
 import { db } from "@/lib/firebase";
 import {
   Loader2, Hexagon, LayoutDashboard, Trash2, User as UserIcon, LogOut,
-  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft, Link, Check, Plus, GripVertical, Settings2, Lock, Share2, Copy, Pencil, MoreVertical, ZoomIn, Palette, EyeOff
+  Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft, Link, Check, Plus, GripVertical, Settings2, Lock, Share2, Copy, Pencil, MoreVertical, ZoomIn, Palette, EyeOff, CopyPlus, ArrowUpToLine, ArrowDownToLine, Table2
 } from "lucide-react";
 
 // Safe dynamic import for Leaflet map
@@ -127,6 +127,7 @@ function DashboardContent() {
   const [activeLayerMenuId, setActiveLayerMenuId] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<any>(null);
   const [hiddenLayers, setHiddenLayers] = useState<string[]>([]);
+  const [attributeTableLayer, setAttributeTableLayer] = useState<any>(null);
 
   // Mobile UI State
   const [mobileTab, setMobileTab] = useState<'map' | 'layers' | 'analytics' | 'surveys'>('map');
@@ -994,8 +995,35 @@ function DashboardContent() {
                              setHiddenLayers([...hiddenLayers, layer.id]);
                           }
                           setActiveLayerMenuId(null);
-                        }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
+                        }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3 border-b border-white/5">
                           {hiddenLayers.includes(layer.id) ? <Eye className="w-4 h-4 text-emerald-400" /> : <EyeOff className="w-4 h-4 text-slate-500" />} {hiddenLayers.includes(layer.id) ? "Show Layer" : "Hide Layer"}
+                        </button>
+
+                        <button onClick={() => {
+                          setAttributeTableLayer(layer);
+                          setActiveLayerMenuId(null);
+                        }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
+                          <Table2 className="w-4 h-4 text-blue-400" /> Open Attribute Table
+                        </button>
+
+                        <button onClick={() => {
+                          const newName = prompt("Enter new layer name:", layer.name);
+                          if (newName) updateDoc(doc(db, "projects", projectId as string, "layers", layer.id), { name: newName });
+                          setActiveLayerMenuId(null);
+                        }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
+                          <Pencil className="w-4 h-4" /> Rename Layer
+                        </button>
+
+                        <button onClick={() => {
+                          addDoc(collection(db, "projects", projectId as string, "layers"), {
+                            name: layer.name + " (Copy)",
+                            color: layer.color,
+                            features: layer.features,
+                            createdAt: serverTimestamp()
+                          });
+                          setActiveLayerMenuId(null);
+                        }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
+                          <CopyPlus className="w-4 h-4 text-emerald-400" /> Duplicate Layer
                         </button>
 
                         <button onClick={() => {
@@ -1014,11 +1042,17 @@ function DashboardContent() {
                         </button>
 
                         <button onClick={() => {
-                          const newName = prompt("Enter new layer name:", layer.name);
-                          if (newName) updateDoc(doc(db, "projects", projectId as string, "layers", layer.id), { name: newName });
+                          updateDoc(doc(db, "projects", projectId as string, "layers", layer.id), { createdAt: serverTimestamp() });
                           setActiveLayerMenuId(null);
                         }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
-                          <Pencil className="w-4 h-4" /> Rename Layer
+                          <ArrowUpToLine className="w-4 h-4" /> Move to Top
+                        </button>
+
+                        <button onClick={() => {
+                          updateDoc(doc(db, "projects", projectId as string, "layers", layer.id), { createdAt: new Date(0) });
+                          setActiveLayerMenuId(null);
+                        }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3 border-b border-white/5">
+                          <ArrowDownToLine className="w-4 h-4" /> Move to Bottom
                         </button>
 
                         <button onClick={() => {
@@ -1028,7 +1062,7 @@ function DashboardContent() {
                           }
                           setActiveLayerMenuId(null);
                         }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
-                          <Palette className="w-4 h-4 text-pink-400" /> Edit Properties...
+                          <Palette className="w-4 h-4 text-pink-400" /> Properties...
                         </button>
 
                         <button onClick={() => {
@@ -1664,6 +1698,52 @@ function DashboardContent() {
         </div>
       )}
       {/* ===================== END MOBILE UI ===================== */}
+
+      {/* Attribute Table Modal */}
+      {attributeTableLayer && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 sm:p-8">
+          <div className="bg-[#0f172a] rounded-2xl border border-white/10 w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col h-[80vh]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/5">
+              <div className="flex items-center gap-3">
+                <Table2 className="w-5 h-5 text-blue-400" />
+                <h3 className="font-semibold text-slate-200">Attribute Table - {attributeTableLayer.name}</h3>
+                <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full">{attributeTableLayer.features?.length || 0} features</span>
+              </div>
+              <button onClick={() => setAttributeTableLayer(null)} className="p-2 hover:bg-white/10 rounded-xl transition-colors text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-4">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-white/10">
+                    <th className="p-3 text-slate-400 font-medium">Feature ID</th>
+                    <th className="p-3 text-slate-400 font-medium">Geometry</th>
+                    <th className="p-3 text-slate-400 font-medium">Properties (JSON)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(attributeTableLayer.features || []).map((f: any, i: number) => (
+                    <tr key={i} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                      <td className="p-3 text-slate-300 font-mono text-xs">{f.id || f.properties?.id || i}</td>
+                      <td className="p-3 text-emerald-400 font-mono text-xs">{f.geometry?.type}</td>
+                      <td className="p-3 text-slate-400 font-mono text-xs break-words max-w-xs sm:max-w-md">
+                        {JSON.stringify(f.properties || {})}
+                      </td>
+                    </tr>
+                  ))}
+                  {(!attributeTableLayer.features || attributeTableLayer.features.length === 0) && (
+                    <tr>
+                      <td colSpan={3} className="p-8 text-center text-slate-500 italic">No features found in this layer.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
