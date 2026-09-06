@@ -8,6 +8,7 @@ import "leaflet-draw/dist/leaflet.draw.css";
 import "leaflet-draw";
 import "leaflet-geosearch/dist/geosearch.css";
 import { GeoSearchControl, OpenStreetMapProvider } from "leaflet-geosearch";
+import { fetchOvertureBuildingsInBounds } from "@/utils/OvertureFallback";
 
 const defaultIcon = L.divIcon({
   className: "custom-div-icon",
@@ -29,6 +30,7 @@ interface MapWrapperProps {
   show3DBuildings?: boolean;
   showHeatmap?: boolean;
   customLayers?: any[];
+  hiddenLayers?: string[];
   mapBounds?: any;
 }
 
@@ -82,7 +84,7 @@ function DrawControl({ onShapeDrawn }: { onShapeDrawn?: (feature: any) => void }
 
 function GeolocationEvents({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
   const map = useMap();
-  useEffect(() => { map.locate({ setView: true, maxZoom: 16 }); }, [map]);
+  useEffect(() => { map.locate({ setView: true, maxZoom: 17 }); }, [map]);
   useMapEvents({ click(e) { onMapClick(e.latlng.lat, e.latlng.lng); } });
   return null;
 }
@@ -107,14 +109,57 @@ function LocateControl() {
   );
 }
 
-function GlobalOverpassFetcher({ onMapClick, activeFootprintId, surveys, onLoading }: { onMapClick: (lat: number, lng: number, fp: any) => void; activeFootprintId?: string | number; surveys: any[]; onLoading: (isLoading: boolean) => void; }) {
+function GlobalBuildingsFetcher({ onMapClick, activeFootprintId, surveys, onLoading }: { onMapClick: (lat: number, lng: number, fp: any) => void; activeFootprintId?: string | number; surveys: any[]; onLoading: (isLoading: boolean) => void; }) {
   const map = useMap();
   const [bgFootprints, setBgFootprints] = useState<any[]>([]);
   const cache = useRef(new Map<string, any[]>());
 
+  // Overpass servers (used as fallback if Overture returns nothing)
+  const OVERPASS_SERVERS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+  ];
+
+  const fetchOverpassFallback = async (s: number, w: number, n: number, e: number): Promise<any[]> => {
+    const q = `[out:json][timeout:15];(way["building"](${s},${w},${n},${e});relation["building"](${s},${w},${n},${e}););out geom;`;
+    for (const server of OVERPASS_SERVERS) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const res = await fetch(server, { method: "POST", body: q, signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (!data || !data.elements) continue;
+        const features: any[] = [];
+        data.elements.forEach((el: any) => {
+          let coords: [number, number][] = [];
+          if (el.type === 'way' && el.geometry) {
+            coords = el.geometry.map((g: any) => [g.lat, g.lon]);
+          } else if (el.type === 'relation' && el.members) {
+            const outer = el.members.find((m: any) => m.role === 'outer' && m.geometry);
+            if (outer) coords = outer.geometry.map((g: any) => [g.lat, g.lon]);
+          }
+          if (coords.length > 0) {
+            features.push({ id: el.id, name: el.tags?.name || "", coords, tags: el.tags || {} });
+          }
+        });
+        return features;
+      } catch (err) {
+        continue;
+      }
+    }
+    return [];
+  };
+
   const fetchTiles = async () => {
     const zoom = map.getZoom();
-    if (zoom < 16) { setBgFootprints([]); return; }
+    if (zoom < 15) { 
+      setBgFootprints([]); 
+      onLoading(false);
+      return; 
+    }
     
     const bounds = map.getBounds();
     const n = bounds.getNorth(); const s = bounds.getSouth(); 
@@ -123,35 +168,24 @@ function GlobalOverpassFetcher({ onMapClick, activeFootprintId, surveys, onLoadi
     const tileKey = `${Math.round(s*100)},${Math.round(w*100)},${Math.round(n*100)},${Math.round(e*100)}`;
     if (cache.current.has(tileKey)) {
       setBgFootprints(cache.current.get(tileKey)!);
+      onLoading(false);
       return;
     }
 
     onLoading(true);
     try {
-      const q = `[out:json][timeout:15];(way["building"](${s},${w},${n},${e});relation["building"](${s},${w},${n},${e}););out geom;`;
-      const res = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: q });
-      const data = await res.json();
-      const features: any[] = [];
-      
-      data.elements.forEach((el: any) => {
-        let coords: [number, number][] = [];
-        if (el.type === 'way' && el.geometry) {
-          coords = el.geometry.map((g: any) => [g.lat, g.lon]);
-        } else if (el.type === 'relation' && el.members) {
-          // Find the outer way
-          const outer = el.members.find((m: any) => m.role === 'outer' && m.geometry);
-          if (outer) {
-            coords = outer.geometry.map((g: any) => [g.lat, g.lon]);
-          }
-        }
-        if (coords.length > 0) {
-          features.push({ id: el.id, name: el.tags?.name || "", coords });
-        }
-      });
+      // PRIMARY: Use Overture Maps PMTiles (2.5 billion buildings globally)
+      let features = await fetchOvertureBuildingsInBounds(s, w, n, e);
+
+      // FALLBACK: If Overture returned nothing, try Overpass API
+      if (features.length === 0) {
+        features = await fetchOverpassFallback(s, w, n, e);
+      }
+
       cache.current.set(tileKey, features);
       setBgFootprints(features);
     } catch (err) {
-      console.error(err);
+      console.error("Building fetch failed:", err);
     }
     onLoading(false);
   };
@@ -172,7 +206,7 @@ function GlobalOverpassFetcher({ onMapClick, activeFootprintId, surveys, onLoadi
         const isSaved = surveys.some(s => s.osmData?.id === footprint.id);
         if (isSaved) return null;
         return (
-          <Polygon key={footprint.id} positions={footprint.coords} pathOptions={{ color: "#a855f7", weight: 2, fillColor: "#a855f7", fillOpacity: 0.2 }} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); onMapClick(e.latlng.lat, e.latlng.lng, { coords: footprint.coords, id: footprint.id, tags: { name: footprint.name, building: "yes", source: "OSM Overpass" } }); } }}>
+          <Polygon key={footprint.id} positions={footprint.coords} pathOptions={{ color: "#a855f7", weight: 2, fillColor: "#a855f7", fillOpacity: 0.2 }} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); onMapClick(e.latlng.lat, e.latlng.lng, { coords: footprint.coords, id: footprint.id, tags: { name: footprint.name, building: "yes", source: footprint.tags?.source || "Overture Maps" } }); } }}>
             <Tooltip>{footprint.name || "Unsurveyed Building"}</Tooltip>
           </Polygon>
         );
@@ -193,7 +227,7 @@ function BoundsHandler({ bounds }: { bounds: any }) {
   return null;
 }
 
-export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onShapeDrawn, onShapeClick, activeClickLoc, activeFootprint, loadingFootprint, show3DBuildings = true, showHeatmap = false, customLayers = [], mapBounds = null }: MapWrapperProps) {
+export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onShapeDrawn, onShapeClick, activeClickLoc, activeFootprint, loadingFootprint, show3DBuildings = true, showHeatmap = false, customLayers = [], hiddenLayers = [], mapBounds = null }: MapWrapperProps) {
   const [mounted, setMounted] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(true);
   useEffect(() => { setMounted(true); }, []);
@@ -201,7 +235,7 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onShape
 
   return (
     <div className="w-full h-full relative z-0 bg-[#0b1121]">
-      <MapContainer center={[23.25, 77.40]} zoom={15} style={{ height: "100%", width: "100%", zIndex: 1 }} zoomControl={true} preferCanvas={false} scrollWheelZoom={true} dragging={true} doubleClickZoom={true}>
+      <MapContainer center={[23.25, 77.40]} zoom={17} style={{ height: "100%", width: "100%", zIndex: 1 }} zoomControl={true} preferCanvas={false} scrollWheelZoom={true} dragging={true} doubleClickZoom={true}>
         <BoundsHandler bounds={mapBounds} />
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="Satellite (Esri)">
@@ -235,29 +269,34 @@ export default function MapWrapper({ surveys, onMapClick, onSurveyClick, onShape
         <GeolocationEvents onMapClick={onMapClick} />
         <LocateControl />
 
-        {show3DBuildings && <GlobalOverpassFetcher onMapClick={onMapClick} activeFootprintId={activeFootprint?.id} surveys={surveys} onLoading={setIsAiLoading} />}
+        {show3DBuildings && <GlobalBuildingsFetcher onMapClick={onMapClick} activeFootprintId={activeFootprint?.id} surveys={surveys} onLoading={setIsAiLoading} />}
 
-        {(customLayers || []).map(layer =>
-          (layer.features || []).map((feature: any, fi: number) => {
+        {(customLayers || []).map(layer => {
+          if ((hiddenLayers || []).includes(layer.id)) return null;
+          return (layer.features || []).map((feature: any, fi: number) => {
             const geomType = feature.geometry?.type;
             const fillColor = feature.properties?.color || layer.color || "#3b82f6";
             const strokeColor = feature.properties?.strokeColor || layer.strokeColor || fillColor;
             const fillOpacity = feature.properties?.fillOpacity ?? layer.fillOpacity ?? 0.25;
             const strokeWidth = feature.properties?.strokeWidth ?? layer.strokeWidth ?? 2;
+            const strokeDasharray = feature.properties?.strokeDasharray ?? layer.strokeDasharray ?? undefined;
             const coords = feature.geometry?.coordinates;
             const key = `${layer.id}-${fi}`;
             if (geomType === "Polygon") {
-              const positions = coords[0].map((c: number[]) => [c[1], c[0]]) as [number, number][];
-              return <Polygon key={key} positions={positions} pathOptions={{ color: strokeColor, weight: strokeWidth, fillColor, fillOpacity }} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onShapeClick) onShapeClick(feature, layer.id, fi); } }}><Tooltip>{feature.properties?.name || layer.name}</Tooltip></Polygon>;
+              const positions = coords.map((ring: number[][]) => ring.map(c => [c[1], c[0]] as [number, number]));
+              return <Polygon key={key} positions={positions} pathOptions={{ color: strokeColor, weight: strokeWidth, fillColor, fillOpacity, dashArray: strokeDasharray }} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onShapeClick) onShapeClick(feature, layer.id, fi); } }}><Tooltip>{feature.properties?.name || layer.name}</Tooltip></Polygon>;
+            } else if (geomType === "MultiPolygon") {
+              const positions = coords.map((polygon: number[][][]) => polygon.map(ring => ring.map(c => [c[1], c[0]] as [number, number])));
+              return <Polygon key={key} positions={positions} pathOptions={{ color: strokeColor, weight: strokeWidth, fillColor, fillOpacity, dashArray: strokeDasharray }} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onShapeClick) onShapeClick(feature, layer.id, fi); } }}><Tooltip>{feature.properties?.name || layer.name}</Tooltip></Polygon>;
             } else if (geomType === "LineString") {
               const positions = coords.map((c: number[]) => [c[1], c[0]]) as [number, number][];
-              return <Polyline key={key} positions={positions} pathOptions={{ color: strokeColor, weight: strokeWidth }} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onShapeClick) onShapeClick(feature, layer.id, fi); } }}><Tooltip>{feature.properties?.name || layer.name}</Tooltip></Polyline>;
+              return <Polyline key={key} positions={positions} pathOptions={{ color: strokeColor, weight: strokeWidth, dashArray: strokeDasharray }} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onShapeClick) onShapeClick(feature, layer.id, fi); } }}><Tooltip>{feature.properties?.name || layer.name}</Tooltip></Polyline>;
             } else if (geomType === "Point") {
               return <Marker key={key} position={[coords[1], coords[0]]} icon={L.divIcon({ className: "custom-div-icon", html: `<div style="background-color: ${fillColor}; width: 12px; height: 12px; border-radius: 50%; border: ${strokeWidth}px solid ${strokeColor}; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`, iconSize: [12, 12], iconAnchor: [6, 6] })} eventHandlers={{ click: (e: any) => { L.DomEvent.stopPropagation(e.originalEvent || e); if (onShapeClick) onShapeClick(feature, layer.id, fi); } }}><Tooltip>{feature.properties?.name || layer.name}</Tooltip></Marker>;
             }
             return null;
-          })
-        )}
+          });
+        })}
 
         {surveys.map((survey, index) => {
           if (showHeatmap) {

@@ -10,6 +10,7 @@ import {
   Loader2, Hexagon, LayoutDashboard, Trash2, User as UserIcon, LogOut,
   Printer, Download, Building, Map, Eye, Edit, BarChart2, X, MapPin, Save, Trash, ArrowLeft, Link, Check, Plus, GripVertical, Settings2, Lock, Share2, Copy, Pencil, MoreVertical, ZoomIn, Palette, EyeOff, CopyPlus, ArrowUpToLine, ArrowDownToLine, Table2
 } from "lucide-react";
+import { fetchOvertureFootprint } from "@/utils/OvertureFallback";
 
 // Safe dynamic import for Leaflet map
 const MapWrapper = dynamic(() => import("@/components/MapWrapper"), {
@@ -93,6 +94,7 @@ function DashboardContent() {
 
   // Form State
   const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
+  const [layerId, setLayerId] = useState<string>("uncategorized");
   const [houseNo, setHouseNo] = useState("");
   const [buildingName, setBuildingName] = useState("");
   const [floors, setFloors] = useState("G");
@@ -124,6 +126,14 @@ function DashboardContent() {
   const [showAddLayerModal, setShowAddLayerModal] = useState(false);
   const [newLayerName, setNewLayerName] = useState("");
   const [newLayerColor, setNewLayerColor] = useState("#3b82f6");
+  const [renameLayerTarget, setRenameLayerTarget] = useState<any>(null);
+  const [renameLayerName, setRenameLayerName] = useState("");
+  const [recolorLayerTarget, setRecolorLayerTarget] = useState<any>(null);
+  const [recolorLayerColor, setRecolorLayerColor] = useState("");
+  const [layerStrokeColor, setLayerStrokeColor] = useState("");
+  const [layerStrokeWidth, setLayerStrokeWidth] = useState(2);
+  const [layerStrokeDasharray, setLayerStrokeDasharray] = useState("");
+  const [layerFillOpacity, setLayerFillOpacity] = useState(0.25);
   const [activeLayerMenuId, setActiveLayerMenuId] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<any>(null);
   const [hiddenLayers, setHiddenLayers] = useState<string[]>([]);
@@ -368,6 +378,7 @@ function DashboardContent() {
 
     // Reset edit mode when clicking a new spot
     setSelectedSurveyId(null);
+    setLayerId("uncategorized");
     setHouseNo("");
     setBuildingName("");
     setFloors("G");
@@ -408,23 +419,42 @@ function DashboardContent() {
       const q = `
         [out:json][timeout:10];
         (
-          way["building"](around:25, ${lat}, ${lng});
-          relation["building"](around:25, ${lat}, ${lng});
-          way["building:part"](around:25, ${lat}, ${lng});
-          relation["building:part"](around:25, ${lat}, ${lng});
+          way["building"](around:50, ${lat}, ${lng});
+          relation["building"](around:50, ${lat}, ${lng});
+          way["building:part"](around:50, ${lat}, ${lng});
+          relation["building:part"](around:50, ${lat}, ${lng});
         );
         out geom;
       `;
-      const response = await fetch("https://overpass-api.de/api/interpreter", {
-        method: "POST",
-        body: q
-      });
-      const data = await response.json();
+      
+      // Try multiple Overpass servers for reliability
+      const OVERPASS_SERVERS = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+      ];
+      
+      let data: any = null;
+      for (const server of OVERPASS_SERVERS) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+          const response = await fetch(server, { method: "POST", body: q, signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (response.ok) {
+            data = await response.json();
+            break;
+          }
+        } catch (err) {
+          console.warn(`Overpass server ${server} failed, trying next...`);
+          continue;
+        }
+      }
 
       let foundBuilding = null;
       let tags: any = {};
 
-      if (data.elements && data.elements.length > 0) {
+      if (data && data.elements && data.elements.length > 0) {
         const buildings = data.elements.filter((e: any) => e.tags && (e.tags.building || e.tags['building:part']));
         if (buildings.length > 0) {
           const b = buildings[0];
@@ -452,7 +482,25 @@ function DashboardContent() {
         }
       }
 
-      // TRICK: If overpass fails to find a polygon, detect as building using a synthetic square
+      // FALLBACK 1: Try Overture Maps global building data
+      if (!foundBuilding) {
+        try {
+          const overtureResult = await fetchOvertureFootprint(lat, lng);
+          if (overtureResult && overtureResult.coords && overtureResult.coords.length > 0) {
+            foundBuilding = { coords: overtureResult.coords, tags: overtureResult.tags || { building: 'yes', source: 'Overture Maps' }, id: overtureResult.id || 'overture-' + Date.now() };
+            setActiveFootprint(foundBuilding);
+
+            const { fetchedName, fetchedFloors, fetchedZoning } = await resolveBuildingDetails(overtureResult.coords, overtureResult.tags || {}, lat, lng);
+            if (fetchedName) setBuildingName(fetchedName);
+            if (fetchedFloors) setFloors(fetchedFloors);
+            if (fetchedZoning) setZoning(fetchedZoning);
+          }
+        } catch (overtureErr) {
+          console.warn("Overture fallback failed:", overtureErr);
+        }
+      }
+
+      // FALLBACK 2: If both Overpass and Overture fail, create a synthetic square
       if (!foundBuilding) {
         const { fetchedName, fetchedFloors, fetchedZoning } = await resolveBuildingDetails([], {}, lat, lng);
 
@@ -491,6 +539,7 @@ function DashboardContent() {
     // Fallback to legacy format if answers object is missing
     const ans = survey.answers || survey;
 
+    setLayerId(survey.layerId || "uncategorized");
     setHouseNo(ans.houseNo || "");
     setBuildingName(ans.buildingName || "");
     setFloors(ans.floors || "G");
@@ -526,6 +575,7 @@ function DashboardContent() {
     setActiveClickLoc(null);
     setActiveFootprint(null);
     setSelectedSurveyId(null);
+    setLayerId("uncategorized");
     setHouseNo("");
     setBuildingName("");
     setFloors("G");
@@ -545,6 +595,7 @@ function DashboardContent() {
     try {
       const surveyData = {
         location: activeClickLoc,
+        layerId: layerId,
         osmData: activeFootprint ? {
           coords: activeFootprint.coords,
           tags: activeFootprint.tags,
@@ -583,20 +634,36 @@ function DashboardContent() {
     }
   };
 
-  const handleExportGeoJSON = () => {
-    if (surveys.length === 0) {
-      alert("No surveys to export.");
+  const handleExportGeoJSON = (targetLayerId?: string) => {
+    const surveysToExport = targetLayerId 
+      ? surveys.filter(s => s.layerId === targetLayerId)
+      : surveys;
+
+    let layerFeatures: any[] = [];
+    if (targetLayerId) {
+      const layer = customLayers.find(l => l.id === targetLayerId);
+      if (layer && layer.features) {
+        layerFeatures = layer.features;
+      }
+    }
+
+    if (surveysToExport.length === 0 && layerFeatures.length === 0) {
+      alert("No data to export for this selection.");
       return;
     }
 
     const swapCoordsAndClose = (arr: any, depth: number): any => {
+      // Handle LatLng objects (legacy Leaflet survey data)
+      if (arr && typeof arr === 'object' && !Array.isArray(arr) && 'lat' in arr && 'lng' in arr) {
+        return [arr.lng, arr.lat];
+      }
       if (!Array.isArray(arr)) return arr;
       // Base coordinate pair
       if (arr.length >= 2 && typeof arr[0] === 'number' && typeof arr[1] === 'number') {
         return [arr[1], arr[0]]; // [lng, lat] for GeoJSON
       }
       
-      const mapped = arr.map(item => swapCoordsAndClose(item, depth + 1));
+      const mapped = arr.map((item: any) => swapCoordsAndClose(item, depth + 1));
       
       // If this array represents a linear ring (array of [lng, lat]), ensure it's closed
       if (mapped.length > 0 && Array.isArray(mapped[0]) && typeof mapped[0][0] === 'number') {
@@ -612,7 +679,7 @@ function DashboardContent() {
 
     const getDepth = (a: any): number => Array.isArray(a) ? 1 + getDepth(a[0]) : 0;
 
-    const features = surveys.map((survey, index) => {
+    const surveyFeatures = surveysToExport.map((survey, index) => {
       let geometry: any = null;
       
       if (survey.osmData?.coords) {
@@ -630,6 +697,15 @@ function DashboardContent() {
       }
 
       const ans = survey.answers || survey;
+      
+      // Calculate area and perimeter for footprint surveys
+      let area_sqm = 0;
+      let perimeter_m = 0;
+      if (survey.osmData?.coords) {
+        area_sqm = Math.round(calculatePolygonArea(survey.osmData.coords));
+        perimeter_m = Math.round(calculatePolygonPerimeter(survey.osmData.coords));
+      }
+
       return {
         type: "Feature",
         geometry,
@@ -644,18 +720,57 @@ function DashboardContent() {
           roadAccess: ans.roadAccess || "",
           occupants: ans.occupants || "",
           yearBuilt: ans.yearBuilt || "",
+          area_sqm,
+          perimeter_m,
           ...ans.dynamic,
           recordedAt: survey.createdAt?.seconds ? new Date(survey.createdAt.seconds * 1000).toISOString() : ""
         }
       };
     });
 
-    const geojson = { type: "FeatureCollection", features };
+    // Validate layer features - ensure polygon rings are closed for QGIS
+    const validatedLayerFeatures = layerFeatures.map((f: any) => {
+      if (!f || !f.geometry) return f;
+      const closeRings = (coords: any): any => {
+        if (!Array.isArray(coords)) return coords;
+        if (coords.length > 0 && Array.isArray(coords[0]) && typeof coords[0][0] === 'number') {
+          // This is a ring of [lng, lat] pairs
+          const first = coords[0];
+          const last = coords[coords.length - 1];
+          if (first[0] !== last[0] || first[1] !== last[1]) {
+            return [...coords, [...first]];
+          }
+          return coords;
+        }
+        return coords.map(closeRings);
+      };
+      if (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon') {
+        return { ...f, geometry: { ...f.geometry, coordinates: closeRings(f.geometry.coordinates) } };
+      }
+      return f;
+    });
+
+    const allFeatures = [...validatedLayerFeatures, ...surveyFeatures];
+
+    const geojson: any = {
+      type: "FeatureCollection",
+      name: project?.name || "PlannerPro Export",
+      crs: { type: "name", properties: { name: "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+      features: allFeatures
+    };
     const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${project?.name?.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'project'}_surveys.geojson`;
+    
+    let filename = `${project?.name?.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'project'}_surveys.geojson`;
+    if (targetLayerId) {
+      const layer = customLayers.find(l => l.id === targetLayerId);
+      if (layer) {
+        filename = `${layer.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_with_surveys.geojson`;
+      }
+    }
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -710,6 +825,7 @@ function DashboardContent() {
               
               // Reset form for new survey
               setSelectedSurveyId(null);
+              setLayerId("uncategorized");
               setHouseNo("");
               setBuildingName("");
               setFloors("G");
@@ -732,6 +848,8 @@ function DashboardContent() {
           activeFootprint={activeFootprint}
           loadingFootprint={loadingFootprint}
           customLayers={customLayers}
+          hiddenLayers={hiddenLayers}
+          mapBounds={mapBounds}
           show3DBuildings={show3DBuildings}
           showHeatmap={showHeatmap}
         />
@@ -793,6 +911,14 @@ function DashboardContent() {
 
               {/* Input Form */}
               <form id="survey-form" onSubmit={handleSaveSurvey} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Target Layer</label>
+                  <select value={layerId} onChange={(e) => setLayerId(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500 focus:bg-black/40 transition-all appearance-none">
+                    <option value="uncategorized" className="bg-slate-900">Uncategorized Surveys</option>
+                    {customLayers.map(l => <option key={l.id} value={l.id} className="bg-slate-900">{l.name}</option>)}
+                  </select>
+                </div>
+                
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-slate-400 mb-1">House No. / Block</label>
@@ -1137,15 +1263,7 @@ function DashboardContent() {
                         </button>
 
                         <button onClick={() => {
-                          const geojson = { type: "FeatureCollection", features: layer.features || [] };
-                          const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
-                          const url = URL.createObjectURL(blob);
-                          const link = document.createElement("a");
-                          link.href = url;
-                          link.download = `${layer.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.geojson`;
-                          document.body.appendChild(link);
-                          link.click();
-                          document.body.removeChild(link);
+                          handleExportGeoJSON(layer.id);
                           setActiveLayerMenuId(null);
                         }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3 border-b border-white/5">
                           <Download className="w-4 h-4 text-emerald-400" /> Export Layer
@@ -1166,13 +1284,15 @@ function DashboardContent() {
                         </button>
 
                         <button onClick={() => {
-                          const newColor = prompt("Enter new HEX color (e.g., #ff0000):", layer.color || "#3b82f6");
-                          if (newColor && /^#[0-9A-F]{6}$/i.test(newColor)) {
-                             updateDoc(doc(db, "projects", projectId as string, "layers", layer.id), { color: newColor });
-                          }
+                          setRecolorLayerTarget(layer);
+                          setRecolorLayerColor(layer.color || "#3b82f6");
+                          setLayerStrokeColor(layer.strokeColor || layer.color || "#3b82f6");
+                          setLayerStrokeWidth(layer.strokeWidth ?? 2);
+                          setLayerStrokeDasharray(layer.strokeDasharray || "");
+                          setLayerFillOpacity(layer.fillOpacity ?? 0.25);
                           setActiveLayerMenuId(null);
                         }} className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-white/5 flex items-center gap-3">
-                          <Palette className="w-4 h-4 text-pink-400" /> Properties...
+                          <Palette className="w-4 h-4 text-pink-400" /> Edit Style...
                         </button>
 
                         <button onClick={() => {
@@ -1196,7 +1316,7 @@ function DashboardContent() {
             <button className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
               <Printer className="w-4 h-4" /> Print Map Layout
             </button>
-            <button onClick={handleExportGeoJSON} className="w-full bg-transparent border border-white/10 hover:border-white/20 hover:bg-white/5 text-slate-300 font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
+            <button onClick={() => handleExportGeoJSON()} className="w-full bg-transparent border border-white/10 hover:border-white/20 hover:bg-white/5 text-slate-300 font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
               <Download className="w-4 h-4" /> Export to GeoJSON
             </button>
           </div>
@@ -1746,6 +1866,70 @@ function DashboardContent() {
         </div>
       )}
       {/* ===================== END MOBILE UI ===================== */}
+
+      {/* ===== EDIT LAYER STYLE MODAL ===== */}
+      {recolorLayerTarget && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center">
+          <div className="bg-white/5 backdrop-blur-2xl border border-white/20 rounded-3xl w-[420px] shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-5 border-b border-white/10">
+              <h2 className="text-white font-bold flex items-center gap-2"><Palette className="w-5 h-5 text-fuchsia-400" /> Edit Layer Style</h2>
+              <button onClick={() => setRecolorLayerTarget(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Fill Color</label>
+                  <div className="flex gap-2">
+                    <input type="color" value={recolorLayerColor} onChange={e => setRecolorLayerColor(e.target.value)} className="w-10 h-10 rounded cursor-pointer bg-transparent border-0 p-0" />
+                    <input type="text" value={recolorLayerColor} onChange={e => setRecolorLayerColor(e.target.value)} className="flex-1 bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Stroke Color</label>
+                  <div className="flex gap-2">
+                    <input type="color" value={layerStrokeColor} onChange={e => setLayerStrokeColor(e.target.value)} className="w-10 h-10 rounded cursor-pointer bg-transparent border-0 p-0" />
+                    <input type="text" value={layerStrokeColor} onChange={e => setLayerStrokeColor(e.target.value)} className="flex-1 bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Line Width / Thickness ({layerStrokeWidth}px)</label>
+                <input type="range" min="0" max="10" step="1" value={layerStrokeWidth} onChange={e => setLayerStrokeWidth(Number(e.target.value))} className="w-full" />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Fill Opacity ({Math.round(layerFillOpacity * 100)}%)</label>
+                <input type="range" min="0" max="1" step="0.05" value={layerFillOpacity} onChange={e => setLayerFillOpacity(Number(e.target.value))} className="w-full" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Line Style (Dashed/Chained)</label>
+                <select value={layerStrokeDasharray} onChange={e => setLayerStrokeDasharray(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500">
+                  <option value="">Solid Line</option>
+                  <option value="5, 5">Dashed Line</option>
+                  <option value="10, 10">Long Dashed</option>
+                  <option value="2, 6">Dotted Line</option>
+                  <option value="15, 10, 5, 10">Chained (Dash-Dot)</option>
+                </select>
+              </div>
+            </div>
+            <div className="p-5 border-t border-white/10 bg-white/5 flex gap-3">
+              <button onClick={() => setRecolorLayerTarget(null)} className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 font-medium rounded-xl transition-colors text-sm">Cancel</button>
+              <button onClick={async () => {
+                await updateDoc(doc(db, "projects", projectId as string, "layers", recolorLayerTarget.id), { 
+                  color: recolorLayerColor,
+                  strokeColor: layerStrokeColor,
+                  strokeWidth: layerStrokeWidth,
+                  strokeDasharray: layerStrokeDasharray,
+                  fillOpacity: layerFillOpacity
+                });
+                setRecolorLayerTarget(null);
+              }} className="flex-1 py-2.5 bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-medium rounded-xl transition-colors text-sm shadow-lg shadow-fuchsia-500/20">Apply Style</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Attribute Table Modal */}
       {attributeTableLayer && (
